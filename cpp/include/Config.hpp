@@ -6,11 +6,12 @@
 namespace echo {
 
 enum class SurfaceMaterial : std::uint8_t {
-    Stone = 0,     // High reflection (0.82), cold cyan acoustic signature
-    Metal = 1,     // Very high reflection (0.94), sharp amber resonance
-    Water = 2,     // Medium reflection (0.64), teal ripple scattering
-    DampMoss = 3,  // High absorption (0.35), muted sage dampening
-    ResonanceDoor = 4 // Interactive gate (0.88), violet harmonic signature
+    Stone = 0,         // Cold slate-blue stone masonry (82% reflectivity)
+    Concrete = 1,      // Industrial reinforced concrete (74% reflectivity)
+    Metal = 2,         // Forged iron & steel bulkheads (94% reflectivity, long ring)
+    Water = 3,         // Subterranean flooded canal (64% reflectivity, teal scatter)
+    DampMoss = 4,      // Overgrown acoustic-damping moss (36% reflectivity)
+    ResonanceDoor = 5  // Harmonic lock barrier (90% reflectivity, violet hum)
 };
 
 enum class WaveSignature : std::uint8_t {
@@ -21,52 +22,71 @@ enum class WaveSignature : std::uint8_t {
     RadialPulse = 4,
     DecoyImpact = 5,
     MechanismClunk = 6,
-    EnemyTremor = 7
+    EnemyTremor = 7,
+    AmbientDrip = 8
+};
+
+enum class AppState : std::uint8_t {
+    MainMenu = 0,
+    Playing = 1,
+    Paused = 2,
+    Settings = 3,
+    Controls = 4,
+    GameOver = 5,
+    Victory = 6
 };
 
 struct MaterialProperties {
-    float reflectivity;      // [0.0, 1.0] fraction of wave intensity preserved on reflection
-    float persistenceSec;    // How long the illuminated wall echo remains visible
-    sf::Color echoColor;     // Characteristic acoustic visual color
+    float reflectivity;      // [0.0, 1.0] fraction of energy retained after reflection
+    float persistenceSec;    // How long the illuminated wall trace stays visible
+    float wallThickness;     // Visual bevel thickness in world units
+    sf::Color echoColor;     // Primary acoustic illumination color
+    sf::Color fillTint;      // Dark structural fill color when illuminated
     const char* label;
 };
 
 inline MaterialProperties getMaterialProperties(SurfaceMaterial mat) noexcept {
     switch (mat) {
         case SurfaceMaterial::Stone:
-            return {0.82f, 3.8f, sf::Color(56, 189, 248), "Stone Masonry"};
+            return {0.82f, 4.0f, 10.0f, sf::Color(56, 189, 248), sf::Color(15, 32, 52), "Stone Masonry"};
+        case SurfaceMaterial::Concrete:
+            return {0.74f, 3.2f, 11.0f, sf::Color(125, 211, 252), sf::Color(22, 34, 48), "Reinforced Concrete"};
         case SurfaceMaterial::Metal:
-            return {0.94f, 5.0f, sf::Color(245, 158, 11), "Forged Iron"};
+            return {0.94f, 5.4f, 8.0f, sf::Color(34, 211, 238), sf::Color(18, 42, 56), "Forged Steel"};
         case SurfaceMaterial::Water:
-            return {0.64f, 2.6f, sf::Color(45, 212, 191), "Subterranean Water"};
+            return {0.64f, 2.8f, 6.0f, sf::Color(45, 212, 191), sf::Color(10, 38, 44), "Subterranean Water"};
         case SurfaceMaterial::DampMoss:
-            return {0.35f, 1.6f, sf::Color(74, 222, 128), "Damp Moss"};
+            return {0.36f, 1.7f, 12.0f, sf::Color(52, 211, 153), sf::Color(12, 34, 28), "Damp Acoustic Moss"};
         case SurfaceMaterial::ResonanceDoor:
-            return {0.88f, 4.5f, sf::Color(167, 139, 250), "Resonance Gate"};
+            return {0.90f, 4.8f, 9.0f, sf::Color(167, 139, 250), sf::Color(36, 22, 62), "Resonance Gate"};
     }
-    return {0.80f, 3.5f, sf::Color(56, 189, 248), "Stone Masonry"};
+    return {0.82f, 4.0f, 10.0f, sf::Color(56, 189, 248), sf::Color(15, 32, 52), "Stone Masonry"};
 }
 
 namespace cfg {
-    constexpr unsigned int kWindowWidth = 1280;
-    constexpr unsigned int kWindowHeight = 800;
+    constexpr unsigned int kDefaultWindowWidth = 1280;
+    constexpr unsigned int kDefaultWindowHeight = 800;
+    constexpr float kWorldWidth = 1280.0f;
+    constexpr float kWorldHeight = 800.0f;
     constexpr float kFixedTimeStep = 1.0f / 60.0f;
 
-    // Acoustic simulation limits (pre-allocated pools to prevent per-frame heap allocation)
-    constexpr std::size_t kMaxActiveRays = 2048;
-    constexpr std::size_t kMaxEchoTraces = 1536;
-    constexpr std::uint8_t kMaxReflections = 3;
+    // Pre-allocated simulation pool sizes (zero per-frame heap allocations)
+    constexpr std::size_t kMaxActiveRays = 2560;
+    constexpr std::size_t kMaxEchoTraces = 2048;
+    constexpr std::size_t kMaxWaveRings = 48;
+    constexpr std::uint8_t kDefaultMaxReflections = 3;
 
-    // Player movement constants
+    // Player physical & movement parameters
     constexpr float kPlayerRadius = 12.0f;
-    constexpr float kSpeedSneak = 82.0f;
-    constexpr float kSpeedWalk = 150.0f;
-    constexpr float kSpeedSprint = 235.0f;
+    constexpr float kEnemyRadius = 14.0f;
+    constexpr float kSpeedSneak = 86.0f;
+    constexpr float kSpeedWalk = 154.0f;
+    constexpr float kSpeedSprint = 238.0f;
 
-    // Cooldowns & resources
-    constexpr float kCooldownPing = 0.65f;
-    constexpr float kCooldownRadialPulse = 2.6f;
-    constexpr float kCooldownDecoy = 4.0f;
+    // Ability cooldowns (seconds)
+    constexpr float kCooldownPing = 0.50f;
+    constexpr float kCooldownRadialPulse = 2.10f;
+    constexpr float kCooldownDecoy = 2.40f;
 } // namespace cfg
 
 } // namespace echo

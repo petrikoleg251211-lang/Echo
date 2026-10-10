@@ -110,65 +110,10 @@ export function createZipBlob(entries: ZipEntryInput[]): Blob {
 }
 
 export function downloadCppProjectZip(): void {
-  const readmeContent = `# EchoLabyrinth_SFML — 2D Acoustic Horror Game (C++17 / SFML 2.6)
-
-## Як зібрати та запустити на Windows (Visual Studio 2022 + CMake)
-
-1. Переконайтеся, що у вас встановлено **CMake 3.20+** та **Visual Studio 2022** (із компонентом "Desktop development with C++") та **Git**.
-2. Двічі клікніть на файл \`build_windows.bat\` АБО виконайте у терміналі:
-   \`\`\`powershell
-   cmake -B build -DCMAKE_BUILD_TYPE=Release
-   cmake --build build --config Release
-   .\\build\\Release\\EchoLabyrinth_SFML.exe
-   \`\`\`
-   *Примітка:* Якщо SFML 2.6 не встановлено локально, \`CMakeLists.txt\` автоматично завантажить SFML 2.6.1 через \`FetchContent\` і скопіює всі потрібні \`.dll\` поруч із \`.exe\`.
-
-## Керування у грі
-- **WASD**: Рух
-- **LShift**: Тихий крок (Sneak — вороги майже не чують)
-- **LCtrl**: Біг (Sprint — гучні кроки)
-- **Ліва кнопка миші**: Спрямований сонарний імпульс у бік курсора
-- **Пробіл (Space)**: Круговий акустичний імпульс на 360°
-- **Права кнопка миші**: Кинути камінь-приманку (Decoy Stone)
-- **F**: Активувати гармонічний важіль дверей / підібрати запис
-- **F5 / F9**: Зберегти / Завантажити чекпойнт
-- **Esc**: Пауза
-`;
-
-  const batScript = `@echo off
-echo ==========================================================
-echo Building EchoLabyrinth_SFML (C++17 + SFML 2.6)...
-echo ==========================================================
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-if %errorlevel% neq 0 (
-    echo [ERROR] CMake configuration failed. Make sure CMake and a C++ compiler are installed.
-    pause
-    exit /b %errorlevel%
-)
-cmake --build build --config Release
-if %errorlevel% neq 0 (
-    echo [ERROR] Compilation failed.
-    pause
-    exit /b %errorlevel%
-)
-echo.
-echo [SUCCESS] Build finished! Launching EchoLabyrinth_SFML...
-if exist "build\\Release\\EchoLabyrinth_SFML.exe" (
-    start "" "build\\Release\\EchoLabyrinth_SFML.exe"
-) else if exist "build\\EchoLabyrinth_SFML.exe" (
-    start "" "build\\EchoLabyrinth_SFML.exe"
-)
-pause
-`;
-
-  const entries: ZipEntryInput[] = [
-    { path: 'EchoLabyrinth_SFML/README.md', content: readmeContent },
-    { path: 'EchoLabyrinth_SFML/build_windows.bat', content: batScript },
-    ...CPP_SOURCE_FILES.map((file) => ({
-      path: file.path.replace(/^cpp\//, 'EchoLabyrinth_SFML/'),
-      content: file.content,
-    })),
-  ];
+  const entries: ZipEntryInput[] = CPP_SOURCE_FILES.map((file) => ({
+    path: file.path.replace(/^cpp\//, 'EchoLabyrinth_SFML/'),
+    content: file.content,
+  }));
 
   const blob = createZipBlob(entries);
   const url = URL.createObjectURL(blob);

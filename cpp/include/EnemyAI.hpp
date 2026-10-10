@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AcousticSystem.hpp"
+#include <SFML/Graphics/RenderTarget.hpp>
 #include <SFML/System/Vector2.hpp>
 #include <vector>
 
@@ -22,12 +23,15 @@ public:
 
     void configurePatrol(const std::vector<sf::Vector2f>& waypoints);
 
-    void update(
+    // Returns true if the enemy just transitioned to an alert state this frame
+    bool update(
         float dt,
         sf::Vector2f playerPos,
         const std::vector<WallSegment>& walls,
         AcousticSystem& acoustics
     );
+
+    void render(sf::RenderTarget& target, float echoIllumination) const;
 
     bool isActive() const noexcept { return m_active; }
     sf::Vector2f position() const noexcept { return m_position; }
@@ -39,7 +43,8 @@ public:
 
 private:
     bool hasLineOfSight(sf::Vector2f target, const std::vector<WallSegment>& walls) const noexcept;
-    void moveAlongDirection(sf::Vector2f target, float speed, float dt, const std::vector<WallSegment>& walls) noexcept;
+    void steerToward(sf::Vector2f target, float speed, float dt, const std::vector<WallSegment>& walls) noexcept;
+    void resolveWallCollisions(const std::vector<WallSegment>& walls) noexcept;
 
     bool m_active{false};
     sf::Vector2f m_position{800.0f, 300.0f};
@@ -51,6 +56,7 @@ private:
     float m_stateTimer{0.0f};
     float m_suspicion{0.0f}; // [0.0, 100.0]
     float m_tremorTimer{0.0f};
+    float m_animPhase{0.0f};
 };
 
 } // namespace echo

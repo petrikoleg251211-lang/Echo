@@ -12,7 +12,7 @@ struct WallSegment {
     sf::Vector2f a;
     sf::Vector2f b;
     SurfaceMaterial material{SurfaceMaterial::Stone};
-    int doorId{-1}; // -1 if static wall, >= 0 if tied to a door/gate
+    int doorId{-1}; // -1 if static wall, >= 0 if tied to a harmonic mechanism
     bool isOpen{false};
 };
 
@@ -25,7 +25,7 @@ struct AcousticRay {
     float maxDistance{500.0f};
     float traveled{0.0f};
     std::uint8_t reflections{0};
-    std::uint8_t maxReflections{cfg::kMaxReflections};
+    std::uint8_t maxReflections{cfg::kDefaultMaxReflections};
     WaveSignature signature{WaveSignature::RadialPulse};
     sf::Color tint{56, 189, 248};
     bool active{false};
@@ -34,11 +34,24 @@ struct AcousticRay {
 struct WallEchoTrace {
     sf::Vector2f hitPoint;
     sf::Vector2f tangent;
+    sf::Vector2f normal;
     float halfLength{14.0f};
     float intensity{1.0f};
     float age{0.0f};
     float lifetime{3.5f};
     SurfaceMaterial material{SurfaceMaterial::Stone};
+    bool active{false};
+};
+
+struct ExpandingWaveRing {
+    sf::Vector2f origin;
+    float radius{0.0f};
+    float maxRadius{400.0f};
+    float speed{360.0f};
+    float intensity{1.0f};
+    float centerAngle{0.0f};
+    float spreadAngle{6.2831853f};
+    sf::Color color{56, 189, 248};
     bool active{false};
 };
 
@@ -56,7 +69,6 @@ public:
 
     void clear() noexcept;
 
-    // Emits a full 360-degree radial pulse or directional cone of rays
     void emitPulse(
         sf::Vector2f origin,
         float speed,
@@ -69,33 +81,54 @@ public:
         bool emittedByPlayer = true
     );
 
-    // Advances wavefront rays, resolves segment intersections & specular reflections
     void update(float dt, const std::vector<WallSegment>& walls);
 
-    // Batched additive rendering of wavefronts and wall phosphor echoes
-    void render(sf::RenderTarget& target) const;
+    void render(sf::RenderTarget& target, float ambientVisibility = 0.03f, const std::vector<WallSegment>* walls = nullptr) const;
 
-    // Consumes recent acoustic events so EnemyAI can react to sounds
+    // Computes how strongly a given point in the world is currently revealed by sound waves/echoes
+    float queryIlluminationAt(sf::Vector2f point, sf::Vector2f playerPos) const noexcept;
+
     const std::vector<AcousticEvent>& recentEvents() const noexcept { return m_recentEvents; }
     void clearRecentEvents() noexcept { m_recentEvents.clear(); }
 
+    void setMaxReflections(std::uint8_t maxRefl) noexcept { m_maxReflections = maxRefl; }
+    std::uint8_t maxReflections() const noexcept { return m_maxReflections; }
+
+    void setRayDensityScale(float scale) noexcept { m_rayDensityScale = scale; }
+    float rayDensityScale() const noexcept { return m_rayDensityScale; }
+
     std::size_t activeRayCount() const noexcept { return m_activeRayCount; }
     std::size_t activeEchoCount() const noexcept { return m_activeEchoCount; }
+    std::size_t totalPulsesEmitted() const noexcept { return m_totalPulsesEmitted; }
+    void resetStats() noexcept { m_totalPulsesEmitted = 0; }
 
 private:
-    void spawnEchoTrace(sf::Vector2f hitPoint, sf::Vector2f wallDir, float intensity, SurfaceMaterial material);
+    void spawnEchoTrace(
+        sf::Vector2f hitPoint,
+        sf::Vector2f wallTangent,
+        sf::Vector2f wallNormal,
+        float intensity,
+        SurfaceMaterial material
+    );
 
     std::vector<AcousticRay> m_rays;
     std::vector<WallEchoTrace> m_echoes;
+    std::vector<ExpandingWaveRing> m_rings;
     std::vector<AcousticEvent> m_recentEvents;
 
-    mutable sf::VertexArray m_waveVertices;
-    mutable sf::VertexArray m_echoVertices;
+    mutable sf::VertexArray m_wallQuads;
+    mutable sf::VertexArray m_echoLines;
+    mutable sf::VertexArray m_waveLines;
 
     std::size_t m_rayCursor{0};
     std::size_t m_echoCursor{0};
+    std::size_t m_ringCursor{0};
     std::size_t m_activeRayCount{0};
     std::size_t m_activeEchoCount{0};
+    std::size_t m_totalPulsesEmitted{0};
+
+    std::uint8_t m_maxReflections{cfg::kDefaultMaxReflections};
+    float m_rayDensityScale{1.0f};
 };
 
 } // namespace echo

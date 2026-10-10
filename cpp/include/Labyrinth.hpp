@@ -12,7 +12,9 @@ struct RoomPortal {
     float radius{28.0f};
     int targetRoomId{0};
     sf::Vector2f targetSpawnPos;
+    std::string label;
     int requiredSwitchId{-1}; // -1 = unlocked, >= 0 = requires switch activation
+    bool isVictoryExit{false};
 };
 
 struct InteractiveMechanism {
@@ -31,16 +33,23 @@ struct LoreCollectible {
     std::string excerpt;
 };
 
+struct AmbientEmitter {
+    sf::Vector2f position;
+    float intervalSec{3.2f};
+    float timer{0.0f};
+};
+
 struct RoomDefinition {
     int id{0};
     std::string name;
     std::string sectorTitle;
-    std::string acousticHint;
-    sf::Vector2f playerDefaultSpawn{180.0f, 400.0f};
+    std::string objectiveText;
+    sf::Vector2f playerDefaultSpawn{150.0f, 400.0f};
     std::vector<WallSegment> walls;
     std::vector<RoomPortal> portals;
     std::vector<InteractiveMechanism> mechanisms;
     std::vector<LoreCollectible> collectibles;
+    std::vector<AmbientEmitter> ambientEmitters;
     std::vector<sf::Vector2f> enemyPatrolNodes;
     bool isCheckpoint{false};
     bool isExitRoom{false};
@@ -51,10 +60,12 @@ public:
     Labyrinth();
 
     void buildAllRooms();
+    void resetAllProgress();
 
     const RoomDefinition& currentRoom() const noexcept { return m_rooms[m_currentRoomIndex]; }
     RoomDefinition& currentRoomMut() noexcept { return m_rooms[m_currentRoomIndex]; }
 
+    const RoomDefinition& roomAt(std::size_t idx) const noexcept { return m_rooms[idx]; }
     int currentRoomId() const noexcept { return static_cast<int>(m_currentRoomIndex); }
     std::size_t roomCount() const noexcept { return m_rooms.size(); }
 
@@ -63,13 +74,27 @@ public:
     bool isSwitchActivated(int switchId) const noexcept;
 
     void markLoreCollected(int loreId) noexcept;
+    bool isLoreCollected(int loreId) const noexcept;
+
+    void markRoomVisited(int roomId) noexcept;
+    bool isRoomVisited(int roomId) const noexcept;
+
+    void restoreState(
+        const std::vector<int>& switches,
+        const std::vector<int>& loreIds,
+        const std::vector<int>& visitedRooms
+    );
+
+    const std::vector<int>& activatedSwitches() const noexcept { return m_activatedSwitches; }
     const std::vector<int>& collectedLoreIds() const noexcept { return m_collectedLoreIds; }
+    const std::vector<int>& visitedRooms() const noexcept { return m_visitedRooms; }
 
 private:
     std::vector<RoomDefinition> m_rooms;
     std::size_t m_currentRoomIndex{0};
     std::vector<int> m_activatedSwitches;
     std::vector<int> m_collectedLoreIds;
+    std::vector<int> m_visitedRooms;
 };
 
 } // namespace echo

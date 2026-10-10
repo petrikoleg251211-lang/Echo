@@ -290,11 +290,10 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
     // Reserve 2 slots at the end for FinalExit and Secret room so total count == m_targetRoomCount
     const std::size_t mainBodyTarget = (m_targetRoomCount > 4) ? (m_targetRoomCount - 2) : m_targetRoomCount;
 
-    // 2. Grow connected branching 2D grid graph (Isaac-style preference for low-neighbor cells to create branches)
+    // 2. Grow connected branching 2D grid graph
     int guard = 0;
     while (nodes.size() < mainBodyTarget && guard < 10000) {
         ++guard;
-        // Pick a frontier node, favoring nodes further from start or with fewer neighbors
         const int parentIdx = rng.rangeInt(0, static_cast<int>(nodes.size()) - 1);
         const CardinalDir dir = static_cast<CardinalDir>(rng.rangeInt(0, 3));
         const int nx = nodes[parentIdx].gx + dirDeltaX(dir);
@@ -302,14 +301,12 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
 
         const int existing = findNodeAt(nx, ny);
         if (existing != -1) {
-            // Occasionally form a loop between adjacent rooms (~14% chance) so the map has tactical loops
             if (rng.rangeInt(0, 99) < 14) {
                 linkNodes(parentIdx, dir, existing);
             }
             continue;
         }
 
-        // Count how many existing rooms border (nx, ny) to prevent overly dense 2x2 blobs
         int adjacentCount = 0;
         for (int d = 0; d < 4; ++d) {
             const auto cd = static_cast<CardinalDir>(d);
@@ -346,8 +343,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
     };
     recomputeBfsDistances();
 
-    // 4. Select the farthest node from Start that has at least one free adjacent grid cell to be the Boss Room,
-    //    and attach FinalExit directly beyond the Boss Room!
+    // 4. Select Boss Room at maximum distance and attach FinalExit beyond it
     int bossIdx = -1;
     CardinalDir exitDirFromBoss = CardinalDir::East;
     int maxDist = -1;
@@ -384,7 +380,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
         m_exitRoomId = bossIdx;
     }
 
-    // 5. Add a Secret Room attached by a single concealed doorway to a mid-run non-Boss room
+    // 5. Add a Secret Room attached by a single concealed doorway
     while (nodes.size() < m_targetRoomCount) {
         int hostIdx = rng.rangeInt(1, static_cast<int>(nodes.size()) - 1);
         if (nodes[hostIdx].type == RoomType::Boss || nodes[hostIdx].type == RoomType::FinalExit) {
@@ -405,7 +401,6 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
             }
         }
         if (!placed) {
-            // Fallback search for any open neighbor cell
             for (std::size_t i = 0; i < nodes.size() && !placed; ++i) {
                 if (nodes[i].type == RoomType::FinalExit) continue;
                 for (int d = 0; d < 4; ++d) {
@@ -426,8 +421,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
 
     recomputeBfsDistances();
 
-    // 6. Assign specialized RoomTypes (Treasure, Shop, Sanctuary, Puzzle, Elite, Secret) across the graph
-    //    Ensure at least 2 Treasure rooms, 1 Shop, 2 Sanctuaries, 2 Puzzles, 2 Elites, and 1 Secret room
+    // 6. Assign specialized RoomTypes
     std::vector<int> candidateIndices;
     for (int i = 1; i < static_cast<int>(nodes.size()); ++i) {
         if (nodes[i].type == RoomType::Combat) {
@@ -435,7 +429,6 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
         }
     }
 
-    // Sort candidates so dead-ends (degree == 1) come first for Treasure / Secret / Shop rooms
     std::sort(candidateIndices.begin(), candidateIndices.end(), [&](int a, int b) {
         if (nodes[a].degree != nodes[b].degree) return nodes[a].degree < nodes[b].degree;
         return nodes[a].distFromStart > nodes[b].distFromStart;
@@ -459,13 +452,12 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
         if (quotaCursor >= specialQuotas.size()) break;
         const RoomType desired = specialQuotas[quotaCursor];
         if (desired == RoomType::Secret && nodes[idx].degree > 1) {
-            continue; // Secret rooms must be leaf nodes with 1 concealed entrance
+            continue;
         }
         nodes[idx].type = desired;
         ++quotaCursor;
     }
 
-    // Ensure at least one Secret room exists on a degree-1 leaf if not already present
     bool hasSecret = false;
     for (const auto& n : nodes) {
         if (n.type == RoomType::Secret) hasSecret = true;
@@ -481,7 +473,8 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
 
     // 7. Construct full RoomDefinition geometry, 4-directional doors, props, relics, and enemy waves
     m_rooms.resize(nodes.size());
-    std::size_t relicRotationCursor = static_cast<std::size_t>(m_runSeed % static_cast<std::uint32_t>(RelicId::Count));
+    constexpr std::size_t kPedestalPoolSize = 8;
+    std::size_t relicRotationCursor = static_cast<std::size_t>(m_runSeed % kPedestalPoolSize);
 
     const SurfaceMaterial materials[5] = {
         SurfaceMaterial::Stone,
@@ -517,7 +510,6 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
         const SurfaceMaterial secondaryMat = materials[(i * 3 + m_runSeed) % 5];
         room.floorMaterial = primaryMat;
 
-        // Determine per-direction door locks
         std::array<int, 4> doorGateIds{{-1, -1, -1, -1}};
         std::array<SurfaceMaterial, 4> doorMats{{
             SurfaceMaterial::ResonanceDoor,
@@ -531,19 +523,16 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
             const int nb = gn.neighbors[static_cast<std::size_t>(d)];
             if (nb == -1) continue;
 
-            // If this doorway connects to or from a Secret Room, conceal it with a Stone barrier (id = 900 + secretRoomId)
             if (gn.type == RoomType::Secret || nodes[nb].type == RoomType::Secret) {
                 const int secId = (gn.type == RoomType::Secret) ? static_cast<int>(i) : nb;
                 doorGateIds[static_cast<std::size_t>(d)] = 900 + secId;
                 doorMats[static_cast<std::size_t>(d)] = SurfaceMaterial::Stone;
                 doorOpen[static_cast<std::size_t>(d)] = false;
             } else if (gn.type == RoomType::Boss && nodes[nb].type == RoomType::FinalExit) {
-                // Doorway from Boss to FinalExit is sealed until the Boss is defeated (800 + bossId)
                 doorGateIds[static_cast<std::size_t>(d)] = 800 + static_cast<int>(i);
                 doorMats[static_cast<std::size_t>(d)] = SurfaceMaterial::ResonanceDoor;
                 doorOpen[static_cast<std::size_t>(d)] = false;
             } else if (gn.type == RoomType::Combat || gn.type == RoomType::Elite || gn.type == RoomType::Boss) {
-                // Combat lock barrier (800 + roomId): initially open until combat lockdown engages
                 doorGateIds[static_cast<std::size_t>(d)] = 800 + static_cast<int>(i);
                 doorMats[static_cast<std::size_t>(d)] = SurfaceMaterial::ResonanceDoor;
                 doorOpen[static_cast<std::size_t>(d)] = true;
@@ -552,7 +541,6 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
 
         addFourWayRoomPerimeter(room.walls, primaryMat, gn.neighbors, doorGateIds, doorMats, doorOpen);
 
-        // Decorative subterranean complex props
         room.props.push_back({PropType::PipeConduit, {135.0f, 112.0f}, {540.0f, 112.0f}, 1.0f, 0.0f});
         room.props.push_back({PropType::PipeConduit, {740.0f, 688.0f}, {1145.0f, 688.0f}, 1.0f, 0.0f});
         room.props.push_back({PropType::VentTurbine, {195.0f, 155.0f}, {0.0f, 0.0f}, 20.0f, static_cast<float>(i * 29)});
@@ -563,13 +551,12 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
             room.props.push_back({PropType::EmergencyBeacon, {520.0f, 320.0f}, {0.0f, 0.0f}, 1.0f, 0.0f});
         }
 
-        // Populate room interior & gameplay rules by RoomType
         switch (gn.type) {
             case RoomType::Start: {
                 room.cleared = true;
                 room.visited = true;
                 room.discovered = true;
-                room.objectiveText = "EXPLORE THE LABYRINTH VIA N/E/S/W DOORS. USE SONAR [LMB / SPACE] TO REVEAL & DISRUPT HUNTERS.";
+                room.objectiveText = "EXPLORE VIA N/E/S/W DOORS. KEEP NOISE <= 30 FOR GHOST CLEAR (x1.5 SHARDS & SILENT STEP).";
                 addRectObstacle(room.walls, 320.0f, 210.0f, 95.0f, 95.0f, SurfaceMaterial::Stone);
                 addRectObstacle(room.walls, 865.0f, 210.0f, 95.0f, 95.0f, SurfaceMaterial::Stone);
                 addRectObstacle(room.walls, 320.0f, 495.0f, 95.0f, 95.0f, SurfaceMaterial::Stone);
@@ -578,8 +565,8 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                     200,
                     {640.0f, 280.0f},
                     false,
-                    "SURVEYOR BRIEFING - ROGUELIKE EXPEDITION",
-                    "EACH RUN GENERATES A NEW LABYRINTH. DIRECT SONAR PINGS [LMB] HARMONICALLY DAMAGE HUNTERS AND UNCOVER SECRET WALLS."
+                    "SURVEYOR BRIEFING - RESONANCE PROTOCOL",
+                    "SOUND IS SIGHT, WEAPON, AND RISK. OPEN DOORS LEAK 50% NOISE TO NEIGHBORS; CLEAR CHAMBERS UNDER 30 NOISE FOR GHOST CLEAR."
                 });
                 break;
             }
@@ -587,7 +574,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
             case RoomType::Combat: {
                 room.cleared = false;
                 room.shardReward = 12 + (gn.distFromStart * 2);
-                room.objectiveText = "HARMONICALLY DISRUPT ALL ACOUSTIC HUNTERS WITH SONAR [LMB / SPACE] TO UNSEAL EXITS.";
+                room.objectiveText = "DISRUPT ALL HUNTERS TO UNSEAL EXITS. KEEP PEAK NOISE <= 30 FOR GHOST CLEAR BONUS!";
 
                 const int layout = static_cast<int>((i + rng.nextU32()) % 3);
                 if (layout == 0) {
@@ -605,7 +592,6 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                     addRectObstacle(room.walls, 875.0f, 240.0f, 95.0f, 320.0f, secondaryMat);
                 }
 
-                // Primary enemy spawn
                 const EnemyVariant v1 = (gn.distFromStart >= 4 && (i % 3 == 0))
                     ? EnemyVariant::Phantom
                     : ((i % 2 == 0) ? EnemyVariant::Stalker : EnemyVariant::Shrieker);
@@ -618,7 +604,6 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 };
                 room.enemySpawns.push_back({v1, room.enemyPatrolNodes, 0});
 
-                // Deeper combat rooms have a 2nd concurrent hunter or a 2nd wave
                 if (gn.distFromStart >= 3) {
                     const EnemyVariant v2 = (i % 2 == 0) ? EnemyVariant::Shrieker : EnemyVariant::Stalker;
                     const int waveIdx = (gn.distFromStart >= 5 && (i % 2 == 1)) ? 1 : 0;
@@ -640,7 +625,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 addRectObstacle(room.walls, 370.0f, 490.0f, 90.0f, 90.0f, SurfaceMaterial::Metal);
                 addRectObstacle(room.walls, 820.0f, 490.0f, 90.0f, 90.0f, SurfaceMaterial::Metal);
 
-                const auto rId = static_cast<RelicId>(relicRotationCursor % static_cast<std::size_t>(RelicId::Count));
+                const auto rId = static_cast<RelicId>(relicRotationCursor % kPedestalPoolSize);
                 ++relicRotationCursor;
                 room.relicPedestals.push_back({rId, {640.0f, 400.0f}, 0, false});
                 break;
@@ -650,7 +635,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 room.cleared = true;
                 room.shardReward = 25;
                 room.objectiveText = "CONCEALED ACOUSTIC CAVERN DISCOVERED! CLAIM THE ANCIENT RELIC & ECHO CACHE [F].";
-                const auto rId = static_cast<RelicId>(relicRotationCursor % static_cast<std::size_t>(RelicId::Count));
+                const auto rId = static_cast<RelicId>(relicRotationCursor % kPedestalPoolSize);
                 ++relicRotationCursor;
                 room.relicPedestals.push_back({rId, {640.0f, 360.0f}, 0, false});
                 room.collectibles.push_back({
@@ -671,7 +656,6 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
 
                 addRectObstacle(room.walls, 460.0f, 250.0f, 80.0f, 120.0f, SurfaceMaterial::Stone);
                 addRectObstacle(room.walls, 460.0f, 430.0f, 80.0f, 120.0f, SurfaceMaterial::Stone);
-                // 45-degree forged steel acoustic mirrors
                 room.walls.push_back({{340.0f, 190.0f}, {430.0f, 280.0f}, SurfaceMaterial::Metal, -1, false});
                 room.walls.push_back({{340.0f, 610.0f}, {430.0f, 520.0f}, SurfaceMaterial::Metal, -1, false});
                 room.walls.push_back({{850.0f, 280.0f}, {940.0f, 190.0f}, SurfaceMaterial::Metal, -1, false});
@@ -716,7 +700,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
             case RoomType::Shop: {
                 room.cleared = true;
                 room.objectiveText = "QUARTERMASTER EXCHANGE: PRESS [F] NEAR AN ITEM TO SPEND ECHO SHARDS.";
-                const auto rId = static_cast<RelicId>(relicRotationCursor % static_cast<std::size_t>(RelicId::Count));
+                const auto rId = static_cast<RelicId>(relicRotationCursor % kPedestalPoolSize);
                 ++relicRotationCursor;
                 const RelicSpec spec = getRelicSpec(rId);
 
@@ -769,7 +753,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                     1
                 });
 
-                const auto rId = static_cast<RelicId>(relicRotationCursor % static_cast<std::size_t>(RelicId::Count));
+                const auto rId = static_cast<RelicId>(relicRotationCursor % kPedestalPoolSize);
                 ++relicRotationCursor;
                 room.relicPedestals.push_back({rId, {640.0f, 400.0f}, 0, false});
                 break;
@@ -781,7 +765,6 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 room.shardReward = 50;
                 room.objectiveText = "BOSS: SHATTER THE CHOIR SOVEREIGN WITH SONAR PINGS [LMB] & PULSES [SPACE] TO UNSEAL THE ASCENT!";
 
-                // 4 acoustic cover monoliths for dodging boss shockwaves & sonic bolts
                 addRectObstacle(room.walls, 340.0f, 210.0f, 95.0f, 95.0f, SurfaceMaterial::Metal);
                 addRectObstacle(room.walls, 845.0f, 210.0f, 95.0f, 95.0f, SurfaceMaterial::Metal);
                 addRectObstacle(room.walls, 340.0f, 495.0f, 95.0f, 95.0f, SurfaceMaterial::Metal);
@@ -827,7 +810,6 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
             }
         }
 
-        // Create 4-directional portals matching `gn.neighbors`
         for (int d = 0; d < 4; ++d) {
             const int nb = gn.neighbors[static_cast<std::size_t>(d)];
             if (nb == -1) continue;
@@ -927,6 +909,102 @@ bool Labyrinth::isRoomCleared(int roomId) const noexcept {
     return m_rooms[static_cast<std::size_t>(roomId)].cleared;
 }
 
+bool Labyrinth::isDoorOpenTowards(int roomId, CardinalDir dir) const noexcept {
+    if (roomId < 0 || static_cast<std::size_t>(roomId) >= m_rooms.size()) return false;
+    const auto& room = m_rooms[static_cast<std::size_t>(roomId)];
+    const int nbId = room.neighbors[static_cast<std::size_t>(dir)];
+    if (nbId < 0 || static_cast<std::size_t>(nbId) >= m_rooms.size()) return false;
+
+    const auto& nbRoom = m_rooms[static_cast<std::size_t>(nbId)];
+    // Closed combat doors on either side block sound transmission completely
+    if (room.combatLocked || nbRoom.combatLocked) {
+        return false;
+    }
+
+    // Check if the portal in this cardinal direction is sealed by a switch/secret/boss lock
+    for (const auto& portal : room.portals) {
+        if (portal.isVictoryExit) continue;
+        if (portal.direction == dir && portal.targetRoomId == nbId) {
+            if (portal.requiredSwitchId != -1 && !isSwitchActivated(portal.requiredSwitchId)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+std::vector<RoomNoiseLeak> Labyrinth::propagateNoiseFromRoom(
+    int sourceRoomId,
+    float sourceNoise,
+    int maxGridSteps
+) const {
+    std::vector<RoomNoiseLeak> leaks;
+    if (sourceRoomId < 0 || static_cast<std::size_t>(sourceRoomId) >= m_rooms.size() || sourceNoise <= 0.0f || maxGridSteps <= 0) {
+        return leaks;
+    }
+
+    struct QueueEntry {
+        int roomId;
+        int dist;
+        float noise;
+    };
+
+    std::vector<int> bestDist(m_rooms.size(), 9999);
+    std::queue<QueueEntry> q;
+    bestDist[static_cast<std::size_t>(sourceRoomId)] = 0;
+    q.push({sourceRoomId, 0, sourceNoise});
+
+    while (!q.empty()) {
+        const QueueEntry cur = q.front();
+        q.pop();
+
+        if (cur.dist >= maxGridSteps) continue;
+
+        for (int d = 0; d < 4; ++d) {
+            const auto dir = static_cast<CardinalDir>(d);
+            if (!isDoorOpenTowards(cur.roomId, dir)) {
+                continue; // Sealed/combat-locked doors block cross-room sound
+            }
+            const int nb = m_rooms[static_cast<std::size_t>(cur.roomId)].neighbors[static_cast<std::size_t>(d)];
+            if (nb < 0 || static_cast<std::size_t>(nb) >= m_rooms.size()) continue;
+
+            const int nextDist = cur.dist + 1;
+            if (nextDist < bestDist[static_cast<std::size_t>(nb)]) {
+                bestDist[static_cast<std::size_t>(nb)] = nextDist;
+                const float nextNoise = cur.noise * cfg::noise::kCrossRoomAttenuation;
+                leaks.push_back({nb, nextDist, nextNoise, oppositeDir(dir)});
+                q.push({nb, nextDist, nextNoise});
+            }
+        }
+    }
+
+    return leaks;
+}
+
+void Labyrinth::reopenRoomForNoiseIntrusion(int roomId) noexcept {
+    if (roomId < 0 || static_cast<std::size_t>(roomId) >= m_rooms.size()) return;
+    auto& room = m_rooms[static_cast<std::size_t>(roomId)];
+    room.cleared = false;
+    m_clearedRooms.erase(
+        std::remove(m_clearedRooms.begin(), m_clearedRooms.end(), roomId),
+        m_clearedRooms.end()
+    );
+    setCombatLock(roomId, true);
+}
+
+int Labyrinth::computeClearShardReward(int baseShards, float roomPeakNoise, bool& outIsGhostClear) noexcept {
+    if (baseShards <= 0) {
+        outIsGhostClear = false;
+        return 0;
+    }
+    if (roomPeakNoise <= cfg::noise::kThresholdAudible) {
+        outIsGhostClear = true;
+        return static_cast<int>(std::round(static_cast<float>(baseShards) * cfg::noise::kGhostClearShardMultiplier));
+    }
+    outIsGhostClear = false;
+    return baseShards;
+}
+
 void Labyrinth::activateSwitch(int switchId) noexcept {
     if (!isSwitchActivated(switchId)) {
         m_activatedSwitches.push_back(switchId);
@@ -950,7 +1028,6 @@ void Labyrinth::activateSwitch(int switchId) noexcept {
             }
         }
     }
-    // If a secret room wall (900 + secRoomId) was opened, mark the secret room as discovered on the map
     if (switchId >= 900 && static_cast<std::size_t>(switchId - 900) < m_rooms.size()) {
         m_rooms[static_cast<std::size_t>(switchId - 900)].discovered = true;
     }
@@ -984,7 +1061,6 @@ void Labyrinth::markRoomVisited(int roomId) noexcept {
     room.visited = true;
     room.discovered = true;
 
-    // Reveal adjacent non-secret rooms on the 2D minimap
     for (int d = 0; d < 4; ++d) {
         const int nb = room.neighbors[static_cast<std::size_t>(d)];
         if (nb >= 0 && static_cast<std::size_t>(nb) < m_rooms.size()) {
@@ -1147,7 +1223,6 @@ bool Labyrinth::verifyRunGraph(std::string& outError) const {
         return false;
     }
 
-    // 1. Verify unique grid coordinates and bidirectional N/E/S/W door symmetry
     for (std::size_t i = 0; i < m_rooms.size(); ++i) {
         const auto& rm = m_rooms[i];
         for (std::size_t j = i + 1; j < m_rooms.size(); ++j) {
@@ -1178,7 +1253,6 @@ bool Labyrinth::verifyRunGraph(std::string& outError) const {
         }
     }
 
-    // 2. Verify full graph connectivity from Start (0) to every room (including Boss & FinalExit)
     std::vector<bool> visited(m_rooms.size(), false);
     std::queue<int> q;
     visited[0] = true;

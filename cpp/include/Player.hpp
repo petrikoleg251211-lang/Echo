@@ -58,6 +58,7 @@ public:
 
     sf::Vector2f position() const noexcept { return m_position; }
     float facingAngleRad() const noexcept { return m_facingAngle; }
+    bool movedLastFrame() const noexcept { return m_movedLastFrame; }
 
     // Hull Integrity (Health) & Invulnerability
     int health() const noexcept { return m_health; }
@@ -92,6 +93,7 @@ public:
     void setRelics(const std::vector<RelicId>& relics) { m_relics = relics; }
     float sonarDamageMultiplier(bool isReflectedHit) const noexcept;
     float resonatorChargeMultiplier() const noexcept;
+    float noiseGainMultiplier(bool isFootstep = false) const noexcept;
 
     float pingCooldown() const noexcept { return m_cooldownPing; }
     float pulseCooldown() const noexcept { return m_cooldownPulse; }
@@ -115,6 +117,7 @@ private:
     float m_cooldownPulse{0.0f};
     float m_cooldownDecoy{0.0f};
     MovementStance m_activeStance{MovementStance::Walk};
+    bool m_movedLastFrame{false};
     int m_decoyCount{4};
     std::vector<RelicId> m_relics;
     DecoyProjectile m_decoyProj;

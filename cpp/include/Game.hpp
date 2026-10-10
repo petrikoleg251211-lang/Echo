@@ -39,39 +39,48 @@ public:
 
     int run();
 
-    // Runs deterministic headless verification of all C++17 roguelike, acoustic, AI, save, and 3D asset systems
+    // Runs deterministic headless verification of all C++17 roguelike, noise, acoustic, AI, save, and 3D asset systems
     static int runSelfTest(const std::string& exeDir = "");
 
 private:
+    // Input & Menu Navigation (GameInput.cpp)
     void handleEvents();
     void handleKeyPressed(sf::Keyboard::Key key);
     void handleMousePressed(sf::Mouse::Button button, sf::Vector2f worldPos);
     void handleMouseMoved(sf::Vector2f worldPos);
+    void tryInteract();
+    void rebuildMenuButtons();
+    void executeMenuSelection(std::size_t index);
 
+    // Core Simulation & Noise System (Game.cpp)
     void updateFixed(float dt);
     void updatePlaying(float dt);
     void updateMenuBackground(float dt);
+    void registerNoiseAction(NoiseAction action, float dt = 1.0f, sf::Vector2f stimulusOrigin = {640.0f, 400.0f});
+    void updateNoiseSystem(float dt);
 
+    // World Rendering (GameWorldRender.cpp)
     void render();
     void renderWorld();
     void renderSubterraneanProps();
     void renderInteractiveObjects();
     void renderVignetteAndDust();
+
+    // HUD, Wave Noise Meter & Overlays (GameHudRender.cpp)
     void renderHud();
+    void renderNoiseWaveMeter(sf::Vector2f topLeft, sf::Vector2f size);
     void renderCornerMinimap();
     void renderMinimapOverlay();
     void renderMenuOverlay();
     void renderSettingsOverlay();
     void renderControlsOverlay();
 
+    // Room Transitions & Persistence (Game.cpp)
     void enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild = true);
     void spawnWaveForCurrentRoom(int waveIndex);
     void startNewGame(std::uint32_t customSeed = 0);
     void saveCheckpoint();
     bool loadCheckpoint();
-    void tryInteract();
-    void rebuildMenuButtons();
-    void executeMenuSelection(std::size_t index);
     void updateLetterboxView(unsigned int winW, unsigned int winH);
     void toggleFullscreen();
 
@@ -109,6 +118,13 @@ private:
     float m_menuPulseTimer{0.0f};
     float m_cameraShakeTimer{0.0f};
     float m_shaleCrackCooldown{0.0f};
+
+    // Block 1: Sound as Risk Resource — Noise Meter & Silence System
+    float m_noiseLevel{0.0f};
+    float m_roomPeakNoise{0.0f};
+    float m_noiseSilenceGraceTimer{0.0f};
+    float m_noiseIntrusionCooldown{0.0f};
+    int m_ghostClearsThisRun{0};
 
     // Roguelike Run & Meta-Progression Counters
     int m_enemiesDisruptedThisRun{0};

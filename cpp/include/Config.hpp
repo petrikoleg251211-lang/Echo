@@ -1,6 +1,8 @@
 #pragma once
 
 #include <SFML/Graphics/Color.hpp>
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 namespace echo {
@@ -84,7 +86,8 @@ enum class RelicId : std::uint8_t {
     PiezoArmorCore = 5,     // +2 Max Hull Integrity & defensive shockwave on hit
     EchoSiphonCoil = 6,     // Sonar hits restore Stamina & charge Resonators 2x faster
     PhantomDecoyRig = 7,    // +3 Decoys & Decoy impacts trigger damaging sonic burst
-    Count = 8
+    SilentStep = 8,         // Ghost Clear accelerator: +18% move speed & -35% Noise generation
+    Count = 9
 };
 
 enum class RelicRarity : std::uint8_t {
@@ -120,10 +123,33 @@ inline RelicSpec getRelicSpec(RelicId id) noexcept {
         case RelicId::EchoSiphonCoil:
             return {id, "ECHO SIPHON COIL", "SONAR HITS RESTORE STAMINA & 2X CRYSTAL CHARGE", RelicRarity::Uncommon, 30, sf::Color(125, 211, 252)};
         case RelicId::PhantomDecoyRig:
+            return {id, "PHANTOM DECOY RIG", "+3 DECOYS & LETHAL RESONANCE DECOY BLAST", RelicRarity::Rare, 38, sf::Color(216, 180, 254)};
+        case RelicId::SilentStep:
         default:
-            return {RelicId::PhantomDecoyRig, "PHANTOM DECOY RIG", "+3 DECOYS & LETHAL RESONANCE DECOY BLAST", RelicRarity::Rare, 38, sf::Color(216, 180, 254)};
+            return {RelicId::SilentStep, "SILENT STEP ACCELERATOR", "GHOST CLEAR RELIC: +18% SPEED & -35% NOISE METER GAIN", RelicRarity::Relic, 40, sf::Color(110, 231, 183)};
     }
 }
+
+// ============================================================================
+// BLOCK 1: Sound as Risk Resource — Noise Meter & Silence System (0..100)
+// ============================================================================
+enum class NoiseTier : std::uint8_t {
+    Quiet = 0,    // 0..30:   Enemies remain in Patrol; eligible for Ghost Clear (x1.5 Shards)
+    Audible = 1,  // 30..60:  Enemies in adjacent open rooms transition to Investigate
+    Loud = 2,     // 60..85:  Enemies converge directly on the sound origin
+    Scream = 3    // 85..100: All enemies within 2 grid rooms receive priority hunt lock on player
+};
+
+enum class NoiseAction : std::uint8_t {
+    StepSneak = 0,       // +2 / sec
+    StepWalk = 1,        // +8 / sec
+    StepSprint = 2,      // +25 / sec
+    DirectionalPing = 3, // +12 instant
+    RadialPulse = 4,     // +30 instant
+    DecoyImpact = 5,     // +15 instant at impact point
+    CombatHit = 6,       // +10 instant per hit
+    SilenceDecay = 7     // -10 / sec in silence
+};
 
 enum class AppState : std::uint8_t {
     MainMenu = 0,
@@ -190,6 +216,69 @@ namespace cfg {
     constexpr float kCooldownPing = 0.48f;
     constexpr float kCooldownRadialPulse = 1.95f;
     constexpr float kCooldownDecoy = 2.20f;
+
+    // Block 1: Noise & Silence tuning parameters
+    namespace noise {
+        constexpr float kMinNoise = 0.0f;
+        constexpr float kMaxNoise = 100.0f;
+
+        constexpr float kStepSneakPerSec = 2.0f;
+        constexpr float kStepWalkPerSec = 8.0f;
+        constexpr float kStepSprintPerSec = 25.0f;
+        constexpr float kPingNoise = 12.0f;
+        constexpr float kRadialPulseNoise = 30.0f;
+        constexpr float kDecoyImpactNoise = 15.0f;
+        constexpr float kCombatHitNoise = 10.0f;
+        constexpr float kSilenceDecayPerSec = 10.0f;
+
+        constexpr float kThresholdAudible = 30.0f;
+        constexpr float kThresholdLoud = 60.0f;
+        constexpr float kThresholdScream = 85.0f;
+
+        constexpr float kCrossRoomAttenuation = 0.50f; // 50% attenuation per open doorway hop
+        constexpr float kGhostClearShardMultiplier = 1.50f;
+    } // namespace noise
 } // namespace cfg
+
+inline constexpr NoiseTier classifyNoiseTier(float noiseLevel) noexcept {
+    if (noiseLevel >= cfg::noise::kThresholdScream) return NoiseTier::Scream;
+    if (noiseLevel >= cfg::noise::kThresholdLoud)   return NoiseTier::Loud;
+    if (noiseLevel >  cfg::noise::kThresholdAudible) return NoiseTier::Audible;
+    return NoiseTier::Quiet;
+}
+
+inline constexpr const char* noiseTierName(NoiseTier tier) noexcept {
+    switch (tier) {
+        case NoiseTier::Quiet:   return "QUIET";
+        case NoiseTier::Audible: return "AUDIBLE";
+        case NoiseTier::Loud:    return "LOUD";
+        case NoiseTier::Scream:  return "SCREAM";
+    }
+    return "QUIET";
+}
+
+inline float computeNoiseActionDelta(NoiseAction action, float dt = 1.0f, float gainMultiplier = 1.0f) noexcept {
+    switch (action) {
+        case NoiseAction::StepSneak:       return cfg::noise::kStepSneakPerSec * dt * gainMultiplier;
+        case NoiseAction::StepWalk:        return cfg::noise::kStepWalkPerSec * dt * gainMultiplier;
+        case NoiseAction::StepSprint:      return cfg::noise::kStepSprintPerSec * dt * gainMultiplier;
+        case NoiseAction::DirectionalPing: return cfg::noise::kPingNoise * gainMultiplier;
+        case NoiseAction::RadialPulse:     return cfg::noise::kRadialPulseNoise * gainMultiplier;
+        case NoiseAction::DecoyImpact:     return cfg::noise::kDecoyImpactNoise * gainMultiplier;
+        case NoiseAction::CombatHit:       return cfg::noise::kCombatHitNoise * gainMultiplier;
+        case NoiseAction::SilenceDecay:    return -cfg::noise::kSilenceDecayPerSec * dt;
+    }
+    return 0.0f;
+}
+
+inline float applyNoiseAction(
+    float currentNoise,
+    NoiseAction action,
+    float dt = 1.0f,
+    float gainMultiplier = 1.0f
+) noexcept {
+    const float next = currentNoise + computeNoiseActionDelta(action, dt, gainMultiplier);
+    return std::clamp(next, cfg::noise::kMinNoise, cfg::noise::kMaxNoise);
+}
 
 } // namespace echo

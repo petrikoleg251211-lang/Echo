@@ -5,6 +5,7 @@
 #include "Labyrinth.hpp"
 #include <SFML/Graphics/RenderTarget.hpp>
 #include <SFML/System/Vector2.hpp>
+#include <cstdint>
 #include <vector>
 
 namespace echo {
@@ -44,6 +45,9 @@ public:
         AcousticSystem& acoustics
     );
 
+    // Block 1: Applies deterministic AI state transitions based on Noise Meter thresholds
+    void applyNoiseTierStimulus(sf::Vector2f stimulusPos, NoiseTier tier) noexcept;
+
     // Applies harmonic sonar damage; returns true if this hit defeated the enemy
     bool applyAcousticDamage(
         float amount,
@@ -66,6 +70,7 @@ public:
 
     bool isActive() const noexcept { return m_active; }
     sf::Vector2f position() const noexcept { return m_position; }
+    sf::Vector2f targetPosition() const noexcept { return m_targetPos; }
     float hitRadius() const noexcept;
     EnemyState state() const noexcept { return m_state; }
     EnemyVariant variant() const noexcept { return m_variant; }

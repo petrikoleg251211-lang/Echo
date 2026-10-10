@@ -117,6 +117,46 @@ void EnemyAI::configurePatrol(const std::vector<sf::Vector2f>& waypoints, EnemyV
     }
 }
 
+void EnemyAI::applyNoiseTierStimulus(sf::Vector2f stimulusPos, NoiseTier tier) noexcept {
+    if (!m_active) return;
+
+    switch (tier) {
+        case NoiseTier::Quiet:
+            // 0..30: Quiet — enemies remain in their current patrol routine
+            break;
+
+        case NoiseTier::Audible:
+            // 30..60: Audible — transition from Patrol/ReturnToPatrol to InvestigateSound
+            m_targetPos = stimulusPos;
+            m_suspicion = std::max(m_suspicion, 42.0f);
+            if (m_state == EnemyState::Patrol || m_state == EnemyState::ReturnToPatrol || m_state == EnemyState::Idle) {
+                m_state = EnemyState::InvestigateSound;
+                m_stateTimer = 4.2f;
+            }
+            break;
+
+        case NoiseTier::Loud:
+            // 60..85: Loud — enemies move directly toward the sound origin with high suspicion
+            m_targetPos = stimulusPos;
+            m_suspicion = std::max(m_suspicion, 72.0f);
+            if (m_state != EnemyState::Attack && m_state != EnemyState::PursuePlayer) {
+                m_state = EnemyState::InvestigateSound;
+                m_stateTimer = 5.0f;
+            }
+            break;
+
+        case NoiseTier::Scream:
+            // 85..100: Scream — priority hunt lock on the player position
+            m_targetPos = stimulusPos;
+            m_suspicion = 100.0f;
+            if (m_state != EnemyState::Attack) {
+                m_state = EnemyState::PursuePlayer;
+                m_stateTimer = 6.0f;
+            }
+            break;
+    }
+}
+
 void EnemyAI::clearContactState() noexcept {
     if (m_state == EnemyState::Attack) {
         m_state = EnemyState::PursuePlayer;

@@ -98,6 +98,14 @@ struct AcousticHazardZone {
     std::string label{"BRITTLE SHALE"};
 };
 
+// Block 1: Cross-room sound propagation entry (attenuates 50% per open doorway hop)
+struct RoomNoiseLeak {
+    int roomId{0};
+    int gridDistance{1};
+    float leakedNoise{0.0f};
+    CardinalDir entryDirInTarget{CardinalDir::West};
+};
+
 struct RoomDefinition {
     int id{0};
     int gridX{0};
@@ -135,6 +143,7 @@ struct RoomDefinition {
     bool sanctuaryUsed{false};
     bool isCheckpoint{false};
     bool isExitRoom{false};
+    bool ghostCleared{false};
 };
 
 class Labyrinth {
@@ -175,6 +184,16 @@ public:
     void setCombatLock(int roomId, bool locked) noexcept;
     void markRoomCleared(int roomId) noexcept;
     bool isRoomCleared(int roomId) const noexcept;
+
+    // Block 1: Cross-room sound propagation, closed-door blocking, & Ghost Clear rewards
+    bool isDoorOpenTowards(int roomId, CardinalDir dir) const noexcept;
+    std::vector<RoomNoiseLeak> propagateNoiseFromRoom(
+        int sourceRoomId,
+        float sourceNoise,
+        int maxGridSteps = 2
+    ) const;
+    void reopenRoomForNoiseIntrusion(int roomId) noexcept;
+    static int computeClearShardReward(int baseShards, float roomPeakNoise, bool& outIsGhostClear) noexcept;
 
     void activateSwitch(int switchId) noexcept;
     bool isSwitchActivated(int switchId) const noexcept;

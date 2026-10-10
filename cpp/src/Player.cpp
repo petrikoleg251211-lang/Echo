@@ -60,11 +60,13 @@ void Player::reset(sf::Vector2f spawnPos) noexcept {
     m_cooldownPing = 0.0f;
     m_cooldownPulse = 0.0f;
     m_cooldownDecoy = 0.0f;
+    m_movedLastFrame = false;
     m_decoyProj.active = false;
 }
 
 void Player::setPosition(sf::Vector2f pos) noexcept {
     m_position = pos;
+    m_movedLastFrame = false;
     m_decoyProj.active = false;
 }
 
@@ -121,6 +123,17 @@ float Player::sonarDamageMultiplier(bool isReflectedHit) const noexcept {
 
 float Player::resonatorChargeMultiplier() const noexcept {
     return hasRelic(RelicId::EchoSiphonCoil) ? 2.0f : 1.0f;
+}
+
+float Player::noiseGainMultiplier(bool isFootstep) const noexcept {
+    float mult = 1.0f;
+    if (hasRelic(RelicId::SilentStep)) {
+        mult *= 0.65f;
+    }
+    if (isFootstep && hasRelic(RelicId::MossTreadBoots)) {
+        mult *= 0.55f;
+    }
+    return mult;
 }
 
 bool Player::applyDamage(int amount, AcousticSystem& acoustics) {
@@ -210,6 +223,7 @@ bool Player::update(
 
     float inputLen = std::sqrt(moveInput.x * moveInput.x + moveInput.y * moveInput.y);
     const bool isMoving = (inputLen > 0.05f);
+    m_movedLastFrame = isMoving;
     if (isMoving) {
         moveInput /= inputLen;
     }
@@ -248,6 +262,13 @@ bool Player::update(
         stepIntensity = 0.88f;
         stepRays = 68;
         stepSig = WaveSignature::FootstepSprint;
+    }
+
+    // SilentStep accelerator relic grants +18% movement speed and dampens footstep radius
+    if (hasRelic(RelicId::SilentStep)) {
+        speed *= 1.18f;
+        stepRadius *= 0.72f;
+        stepIntensity *= 0.72f;
     }
 
     // MossTreadBoots relic dampens footstep noise radius & intensity by 45%

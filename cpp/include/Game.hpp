@@ -101,6 +101,7 @@ private:
     float m_loreDisplayTimer{0.0f};
     float m_menuPulseTimer{0.0f};
     float m_cameraShakeTimer{0.0f};
+    float m_shaleCrackCooldown{0.0f};
     bool m_showMinimap{false};
     bool m_isFullscreen{false};
 };

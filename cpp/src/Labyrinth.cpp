@@ -1,9 +1,25 @@
 #include "Labyrinth.hpp"
 #include <algorithm>
+#include <cmath>
+#include <queue>
 
 namespace echo {
 
 namespace {
+sf::Vector2f closestPointOnSegment(sf::Vector2f p, sf::Vector2f a, sf::Vector2f b) noexcept {
+    const sf::Vector2f ab = b - a;
+    const float lenSq = ab.x * ab.x + ab.y * ab.y;
+    if (lenSq < 1e-6f) return a;
+    const float t = std::clamp(((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / lenSq, 0.0f, 1.0f);
+    return a + ab * t;
+}
+
+float distSq(sf::Vector2f a, sf::Vector2f b) noexcept {
+    const float dx = b.x - a.x;
+    const float dy = b.y - a.y;
+    return dx * dx + dy * dy;
+}
+
 void addRectObstacle(
     std::vector<WallSegment>& walls,
     float x, float y, float w, float h,
@@ -26,11 +42,9 @@ void addRoomPerimeterWithVestibules(
     constexpr float right = 1190.0f;
     constexpr float bottom = 720.0f;
 
-    // North & South main walls
     walls.push_back({{left, top}, {right, top}, mat, -1, false});
     walls.push_back({{right, bottom}, {left, bottom}, mat, -1, false});
 
-    // West wall with recessed tunnel vestibule at y in [335, 465]
     if (hasWestTunnel) {
         walls.push_back({{left, top}, {left, 335.0f}, mat, -1, false});
         walls.push_back({{left, 335.0f}, {45.0f, 335.0f}, mat, -1, false});
@@ -41,7 +55,6 @@ void addRoomPerimeterWithVestibules(
         walls.push_back({{left, bottom}, {left, top}, mat, -1, false});
     }
 
-    // East wall with recessed tunnel vestibule at y in [335, 465]
     if (hasEastTunnel) {
         walls.push_back({{right, top}, {right, 335.0f}, mat, -1, false});
         walls.push_back({{right, 335.0f}, {1235.0f, 335.0f}, mat, -1, false});
@@ -59,10 +72,8 @@ void addSealedEastBulkhead(
     SurfaceMaterial bulkheadMat
 ) {
     constexpr float bx = 1045.0f;
-    // Solid upper and lower bulkhead walls so the player cannot walk around the gate
     walls.push_back({{bx, 80.0f}, {bx, 325.0f}, bulkheadMat, -1, false});
     walls.push_back({{bx, 475.0f}, {bx, 720.0f}, bulkheadMat, -1, false});
-    // The Resonance Gate spanning the opening
     walls.push_back({{bx, 325.0f}, {bx, 475.0f}, SurfaceMaterial::ResonanceDoor, doorSwitchId, false});
 }
 } // namespace
@@ -109,7 +120,7 @@ void Labyrinth::buildAllRooms() {
         {
             "02. ECHOING GALLERY",
             "UPPER DRAINAGE",
-            "BOUNCE SONAR RAYS OFF ANGLED STEEL MIRRORS TO SCOUT AROUND BLIND CORNERS.",
+            "ENERGIZE THE TUNING CRYSTAL WITH SONAR RAYS [LMB / SPACE] TO UNSEAL THE EAST GATE.",
             SurfaceMaterial::Stone, SurfaceMaterial::Metal, 1, false, false,
             nullptr, nullptr
         },
@@ -124,7 +135,7 @@ void Labyrinth::buildAllRooms() {
         {
             "04. IRON FOUNDRY",
             "INDUSTRIAL CORE",
-            "STEEL WALLS AMPLIFY SOUND. SNEAK [LSHIFT] THROUGH THE BAFFLES TO THE EAST EXIT.",
+            "SNEAK [LSHIFT] OVER BRITTLE SHALE ZONES SO THEY DO NOT CRACK AND ALERT THE HUNTER.",
             SurfaceMaterial::Metal, SurfaceMaterial::Concrete, 3, true, false,
             nullptr, nullptr
         },
@@ -146,15 +157,15 @@ void Labyrinth::buildAllRooms() {
         {
             "07. RESONANCE CHAMBER",
             "ACOUSTIC SANCTUM",
-            "USE MULTI-BOUNCE REFLECTIONS TO NAVIGATE THE ACOUSTIC MIRROR ARRAY.",
+            "BOUNCE SONAR WAVES OFF THE 45-DEGREE STEEL MIRRORS TO CHARGE THE RESONATOR CRYSTAL.",
             SurfaceMaterial::Metal, SurfaceMaterial::Stone, 1, false, false,
-            "LOG 04 - HARMONIC GATES",
-            "VIOLET RESONANCE BARRIERS RETRACT ONLY WHEN THEIR TUNING LEVER IS PULLED."
+            "LOG 04 - HARMONIC CRYSTALS",
+            "CRYSTAL RESONATORS ABSORB COHERENT SONAR RAYS AND UNSEAL PAIRED HARMONIC BARRIERS."
         },
         {
             "08. WARDEN WATCHPOST",
             "SECURITY RING",
-            "NAVIGATE THE REINFORCED CONCRETE CHICANES WITHOUT ALERTING THE SENTINEL.",
+            "NAVIGATE THE REINFORCED CONCRETE CHICANES AND SNEAK ACROSS LOOSE SHALE.",
             SurfaceMaterial::Concrete, SurfaceMaterial::Metal, 3, true, false,
             nullptr, nullptr
         },
@@ -164,7 +175,7 @@ void Labyrinth::buildAllRooms() {
             "UNLOCK THE CANAL GATE VIA THE NORTHERN LEVER [F]. CHECKPOINT REACHED.",
             SurfaceMaterial::Water, SurfaceMaterial::Metal, 2, true, true,
             "LOG 05 - HYDRO ACOUSTICS",
-            "DRIPPING CISTERNS MASK QUIET MOVEMENT. USE DECOY STONES WHEN CORNERED."
+            "STEAM VENTS MASK NEARBY FOOTSTEPS WHILE PULSING. USE DECOY STONES WHEN CORNERED."
         },
         {
             "10. RITUAL ATRIUM",
@@ -176,10 +187,10 @@ void Labyrinth::buildAllRooms() {
         {
             "11. RUST CORRIDOR",
             "INDUSTRIAL CORE",
-            "NARROW IRON BULKHEADS CHANNEL ECHOES. DO NOT SPRINT NEAR THE PATROL.",
+            "NARROW IRON BULKHEADS TRANSMIT 72% OF SOUND THROUGH WALLS. DO NOT SPRINT.",
             SurfaceMaterial::Metal, SurfaceMaterial::DampMoss, 3, true, false,
             "LOG 06 - IRON RESONANCE",
-            "ONE SPRINT STEP ON FORGED STEEL RINGS ACROSS THE ENTIRE CORRIDOR."
+            "FORGED STEEL BULKHEADS TRANSMIT VIBRATIONS EVEN THROUGH SOLID PARTITIONS."
         },
         {
             "12. GENERATOR HALL",
@@ -225,21 +236,21 @@ void Labyrinth::buildAllRooms() {
         room.playerDefaultSpawn = {145.0f, 400.0f};
 
         const bool hasWest = (i > 0);
-        const bool hasEast = true; // Room 14 east vestibule is the Victory Surface Lift
+        const bool hasEast = true;
         addRoomPerimeterWithVestibules(room.walls, bp.primaryMat, hasWest, hasEast);
 
         int reqSwitch = -1;
 
         if (bp.archetype == 0) {
-            // Archetype 0: Cistern columns & water basin
             addRectObstacle(room.walls, 280.0f, 160.0f, 105.0f, 165.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 280.0f, 475.0f, 105.0f, 165.0f, bp.primaryMat);
             addRectObstacle(room.walls, 560.0f, 275.0f, 130.0f, 250.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 845.0f, 160.0f, 100.0f, 165.0f, bp.primaryMat);
             addRectObstacle(room.walls, 845.0f, 475.0f, 100.0f, 165.0f, bp.secondaryMat);
-            room.ambientEmitters.push_back({{625.0f, 240.0f}, 3.6f, 1.0f});
+            room.ambientEmitters.push_back({{625.0f, 225.0f}, 3.6f, 1.0f, true});
         } else if (bp.archetype == 1) {
-            // Archetype 1: Acoustic Mirror Gallery with 45-degree forged steel reflectors
+            // Acoustic Mirror Gallery + Resonator Crystal lock
+            reqSwitch = 100 + i;
             addRectObstacle(room.walls, 330.0f, 230.0f, 95.0f, 340.0f, bp.primaryMat);
             addRectObstacle(room.walls, 670.0f, 140.0f, 110.0f, 185.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 670.0f, 475.0f, 110.0f, 185.0f, bp.secondaryMat);
@@ -248,8 +259,18 @@ void Labyrinth::buildAllRooms() {
             room.walls.push_back({{490.0f, 660.0f}, {600.0f, 560.0f}, SurfaceMaterial::Metal, -1, false});
             room.walls.push_back({{870.0f, 230.0f}, {965.0f, 325.0f}, SurfaceMaterial::Metal, -1, false});
             room.walls.push_back({{870.0f, 570.0f}, {965.0f, 475.0f}, SurfaceMaterial::Metal, -1, false});
+
+            addSealedEastBulkhead(room.walls, reqSwitch, SurfaceMaterial::Metal);
+            room.resonators.push_back({
+                reqSwitch,
+                {825.0f, 400.0f},
+                18.0f,
+                0.0f,
+                false,
+                reqSwitch,
+                "HARMONIC RESONATOR CRYSTAL"
+            });
         } else if (bp.archetype == 2) {
-            // Archetype 2: Sealed Bulkhead Chamber with Harmonic Lever
             reqSwitch = 100 + i;
             addRectObstacle(room.walls, 285.0f, 170.0f, 115.0f, 175.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 285.0f, 460.0f, 115.0f, 175.0f, bp.primaryMat);
@@ -265,21 +286,23 @@ void Labyrinth::buildAllRooms() {
                 "HARMONIC CONDUIT LEVER",
                 reqSwitch
             });
-            room.ambientEmitters.push_back({{920.0f, 610.0f}, 4.2f, 0.5f});
+            room.ambientEmitters.push_back({{920.0f, 610.0f}, 4.0f, 0.5f, true});
+            room.hazards.push_back({{475.0f, 235.0f}, 42.0f, "BRITTLE SHALE"});
         } else if (bp.archetype == 3) {
-            // Archetype 3: Interlocking Industrial Chicanes
             addRectObstacle(room.walls, 275.0f, 80.0f, 90.0f, 350.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 505.0f, 370.0f, 90.0f, 350.0f, bp.primaryMat);
             addRectObstacle(room.walls, 735.0f, 80.0f, 90.0f, 350.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 935.0f, 410.0f, 75.0f, 195.0f, bp.primaryMat);
+
+            room.hazards.push_back({{425.0f, 520.0f}, 45.0f, "BRITTLE SHALE"});
+            room.hazards.push_back({{660.0f, 240.0f}, 45.0f, "BRITTLE SHALE"});
         } else if (bp.archetype == 4) {
-            // Archetype 4: Catacomb Atrium with central sanctuary pillars
             addRectObstacle(room.walls, 380.0f, 185.0f, 120.0f, 120.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 380.0f, 495.0f, 120.0f, 120.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 740.0f, 185.0f, 120.0f, 120.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 740.0f, 495.0f, 120.0f, 120.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 575.0f, 345.0f, 110.0f, 110.0f, SurfaceMaterial::Metal);
-            room.ambientEmitters.push_back({{630.0f, 400.0f}, 3.0f, 0.2f});
+            room.ambientEmitters.push_back({{630.0f, 260.0f}, 3.2f, 0.2f, true});
         } else {
             // Archetype 5: Room 15 Final Ascent Gate
             reqSwitch = 100 + i;
@@ -295,20 +318,19 @@ void Labyrinth::buildAllRooms() {
             });
         }
 
-        // West portal
         if (hasWest) {
+            // Notice: when returning West into room (i-1), spawn at x = 985.0f (inside the main chamber west of any 1045 bulkhead!)
             room.portals.push_back({
                 {70.0f, 400.0f},
                 28.0f,
                 i - 1,
-                {1130.0f, 400.0f},
+                {985.0f, 400.0f},
                 "WEST TUNNEL",
                 -1,
                 false
             });
         }
 
-        // East portal (either to next room or Victory Surface Lift in room 14)
         room.portals.push_back({
             {1210.0f, 400.0f},
             30.0f,
@@ -322,7 +344,7 @@ void Labyrinth::buildAllRooms() {
         if (bp.loreTitle != nullptr && bp.loreBody != nullptr) {
             room.collectibles.push_back({
                 200 + i,
-                {465.0f, 625.0f},
+                {450.0f, 645.0f},
                 false,
                 bp.loreTitle,
                 bp.loreBody
@@ -370,6 +392,12 @@ void Labyrinth::activateSwitch(int switchId) noexcept {
     for (auto& room : m_rooms) {
         for (auto& mech : room.mechanisms) {
             if (mech.id == switchId) mech.activated = true;
+        }
+        for (auto& res : room.resonators) {
+            if (res.id == switchId) {
+                res.activated = true;
+                res.energy = 1.0f;
+            }
         }
         for (auto& wall : room.walls) {
             if (wall.doorId == switchId) wall.isOpen = true;
@@ -426,6 +454,117 @@ void Labyrinth::restoreState(
     if (m_visitedRooms.empty()) {
         markRoomVisited(0);
     }
+}
+
+bool Labyrinth::verifyRoomTraversability(int roomId, std::string& outError) const {
+    if (roomId < 0 || static_cast<std::size_t>(roomId) >= m_rooms.size()) {
+        outError = "Invalid room ID";
+        return false;
+    }
+
+    const RoomDefinition& room = m_rooms[static_cast<std::size_t>(roomId)];
+    constexpr float kStep = 10.0f;
+    constexpr float kMinX = 45.0f;
+    constexpr float kMaxX = 1235.0f;
+    constexpr float kMinY = 80.0f;
+    constexpr float kMaxY = 720.0f;
+    constexpr int kCols = static_cast<int>((kMaxX - kMinX) / kStep) + 1;
+    constexpr int kRows = static_cast<int>((kMaxY - kMinY) / kStep) + 1;
+    constexpr float kClearance = cfg::kPlayerRadius + 2.0f;
+
+    auto runBfs = [&](bool gatesOpen) {
+        std::vector<bool> reachable(static_cast<std::size_t>(kCols * kRows), false);
+
+        auto isWalkable = [&](float wx, float wy) {
+            for (const auto& w : room.walls) {
+                if (w.isOpen || (gatesOpen && w.doorId != -1)) continue;
+                const sf::Vector2f c = closestPointOnSegment({wx, wy}, w.a, w.b);
+                if (distSq({wx, wy}, c) < kClearance * kClearance) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        const int startC = std::clamp(static_cast<int>(std::round((room.playerDefaultSpawn.x - kMinX) / kStep)), 0, kCols - 1);
+        const int startR = std::clamp(static_cast<int>(std::round((room.playerDefaultSpawn.y - kMinY) / kStep)), 0, kRows - 1);
+
+        std::queue<std::pair<int, int>> q;
+        if (isWalkable(kMinX + static_cast<float>(startC) * kStep, kMinY + static_cast<float>(startR) * kStep)) {
+            reachable[static_cast<std::size_t>(startR * kCols + startC)] = true;
+            q.push({startC, startR});
+        }
+
+        const int dc[4] = {1, -1, 0, 0};
+        const int dr[4] = {0, 0, 1, -1};
+
+        while (!q.empty()) {
+            const auto [c, r] = q.front();
+            q.pop();
+            for (int d = 0; d < 4; ++d) {
+                const int nc = c + dc[d];
+                const int nr = r + dr[d];
+                if (nc < 0 || nc >= kCols || nr < 0 || nr >= kRows) continue;
+                const std::size_t idx = static_cast<std::size_t>(nr * kCols + nc);
+                if (reachable[idx]) continue;
+                const float wx = kMinX + static_cast<float>(nc) * kStep;
+                const float wy = kMinY + static_cast<float>(nr) * kStep;
+                if (isWalkable(wx, wy)) {
+                    reachable[idx] = true;
+                    q.push({nc, nr});
+                }
+            }
+        }
+        return reachable;
+    };
+
+    auto isPointReachableWithin = [&](const std::vector<bool>& grid, sf::Vector2f target, float interactRadius) {
+        for (int r = 0; r < kRows; ++r) {
+            for (int c = 0; c < kCols; ++c) {
+                if (!grid[static_cast<std::size_t>(r * kCols + c)]) continue;
+                const sf::Vector2f pt{kMinX + static_cast<float>(c) * kStep, kMinY + static_cast<float>(r) * kStep};
+                if (distSq(pt, target) <= interactRadius * interactRadius) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    // 1. Check with gates CLOSED
+    const auto closedGrid = runBfs(false);
+    for (const auto& mech : room.mechanisms) {
+        if (!isPointReachableWithin(closedGrid, mech.position, 48.0f)) {
+            outError = "Mechanism unreachable in " + room.name;
+            return false;
+        }
+    }
+    for (const auto& lore : room.collectibles) {
+        if (!isPointReachableWithin(closedGrid, lore.position, 48.0f)) {
+            outError = "Lore collectible unreachable in " + room.name;
+            return false;
+        }
+    }
+    for (const auto& portal : room.portals) {
+        if (portal.requiredSwitchId != -1) {
+            // Must NOT be reachable while gate is closed
+            if (isPointReachableWithin(closedGrid, portal.position, portal.radius)) {
+                outError = "Locked portal can be bypassed without switch in " + room.name;
+                return false;
+            }
+        }
+    }
+
+    // 2. Check with gates OPEN
+    const auto openGrid = runBfs(true);
+    for (const auto& portal : room.portals) {
+        if (!isPointReachableWithin(openGrid, portal.position, portal.radius)) {
+            outError = "Portal (" + portal.label + ") unreachable even with gate open in " + room.name;
+            return false;
+        }
+    }
+
+    return true;
 }
 
 } // namespace echo

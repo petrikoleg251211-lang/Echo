@@ -49,6 +49,7 @@ public:
     sf::Vector2f position() const noexcept { return m_position; }
     float facingAngleRad() const noexcept { return m_facingAngle; }
     float stamina() const noexcept { return m_stamina; }
+    void setStamina(float stamina) noexcept { m_stamina = stamina; }
     MovementStance activeStance() const noexcept { return m_activeStance; }
 
     int decoyCount() const noexcept { return m_decoyCount; }

@@ -6,12 +6,12 @@
 namespace echo {
 
 enum class SurfaceMaterial : std::uint8_t {
-    Stone = 0,         // Cold slate-blue stone masonry (82% reflectivity)
-    Concrete = 1,      // Industrial reinforced concrete (74% reflectivity)
-    Metal = 2,         // Forged iron & steel bulkheads (94% reflectivity, long ring)
-    Water = 3,         // Subterranean flooded canal (64% reflectivity, teal scatter)
-    DampMoss = 4,      // Overgrown acoustic-damping moss (36% reflectivity)
-    ResonanceDoor = 5  // Harmonic lock barrier (90% reflectivity, violet hum)
+    Stone = 0,         // Cold slate-blue stone masonry (82% reflectivity, 42% transmission)
+    Concrete = 1,      // Industrial reinforced concrete (74% reflectivity, 50% transmission)
+    Metal = 2,         // Forged iron & steel bulkheads (94% reflectivity, 72% transmission)
+    Water = 3,         // Subterranean flooded canal (64% reflectivity, 60% transmission)
+    DampMoss = 4,      // Overgrown acoustic-damping moss (36% reflectivity, 30% transmission)
+    ResonanceDoor = 5  // Harmonic lock barrier (90% reflectivity, 45% transmission)
 };
 
 enum class WaveSignature : std::uint8_t {
@@ -23,7 +23,9 @@ enum class WaveSignature : std::uint8_t {
     DecoyImpact = 5,
     MechanismClunk = 6,
     EnemyTremor = 7,
-    AmbientDrip = 8
+    AmbientDrip = 8,
+    ShaleCrack = 9,
+    ResonatorHum = 10
 };
 
 enum class AppState : std::uint8_t {
@@ -38,6 +40,7 @@ enum class AppState : std::uint8_t {
 
 struct MaterialProperties {
     float reflectivity;      // [0.0, 1.0] fraction of energy retained after reflection
+    float transmission;      // [0.0, 1.0] fraction of sound loudness transmitted through wall to AI
     float persistenceSec;    // How long the illuminated wall trace stays visible
     float wallThickness;     // Visual bevel thickness in world units
     sf::Color echoColor;     // Primary acoustic illumination color
@@ -48,19 +51,19 @@ struct MaterialProperties {
 inline MaterialProperties getMaterialProperties(SurfaceMaterial mat) noexcept {
     switch (mat) {
         case SurfaceMaterial::Stone:
-            return {0.82f, 4.0f, 10.0f, sf::Color(56, 189, 248), sf::Color(15, 32, 52), "Stone Masonry"};
+            return {0.82f, 0.42f, 4.0f, 10.0f, sf::Color(56, 189, 248), sf::Color(15, 32, 52), "Stone Masonry"};
         case SurfaceMaterial::Concrete:
-            return {0.74f, 3.2f, 11.0f, sf::Color(125, 211, 252), sf::Color(22, 34, 48), "Reinforced Concrete"};
+            return {0.74f, 0.50f, 3.2f, 11.0f, sf::Color(125, 211, 252), sf::Color(22, 34, 48), "Reinforced Concrete"};
         case SurfaceMaterial::Metal:
-            return {0.94f, 5.4f, 8.0f, sf::Color(34, 211, 238), sf::Color(18, 42, 56), "Forged Steel"};
+            return {0.94f, 0.72f, 5.4f, 8.0f, sf::Color(34, 211, 238), sf::Color(18, 42, 56), "Forged Steel"};
         case SurfaceMaterial::Water:
-            return {0.64f, 2.8f, 6.0f, sf::Color(45, 212, 191), sf::Color(10, 38, 44), "Subterranean Water"};
+            return {0.64f, 0.60f, 2.8f, 6.0f, sf::Color(45, 212, 191), sf::Color(10, 38, 44), "Subterranean Water"};
         case SurfaceMaterial::DampMoss:
-            return {0.36f, 1.7f, 12.0f, sf::Color(52, 211, 153), sf::Color(12, 34, 28), "Damp Acoustic Moss"};
+            return {0.36f, 0.30f, 1.7f, 12.0f, sf::Color(52, 211, 153), sf::Color(12, 34, 28), "Damp Acoustic Moss"};
         case SurfaceMaterial::ResonanceDoor:
-            return {0.90f, 4.8f, 9.0f, sf::Color(167, 139, 250), sf::Color(36, 22, 62), "Resonance Gate"};
+            return {0.90f, 0.45f, 4.8f, 9.0f, sf::Color(167, 139, 250), sf::Color(36, 22, 62), "Resonance Gate"};
     }
-    return {0.82f, 4.0f, 10.0f, sf::Color(56, 189, 248), sf::Color(15, 32, 52), "Stone Masonry"};
+    return {0.82f, 0.42f, 4.0f, 10.0f, sf::Color(56, 189, 248), sf::Color(15, 32, 52), "Stone Masonry"};
 }
 
 namespace cfg {

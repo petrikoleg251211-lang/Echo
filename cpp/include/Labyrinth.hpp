@@ -13,7 +13,7 @@ struct RoomPortal {
     int targetRoomId{0};
     sf::Vector2f targetSpawnPos;
     std::string label;
-    int requiredSwitchId{-1}; // -1 = unlocked, >= 0 = requires switch activation
+    int requiredSwitchId{-1}; // -1 = unlocked, >= 0 = requires switch or resonator activation
     bool isVictoryExit{false};
 };
 
@@ -37,6 +37,13 @@ struct AmbientEmitter {
     sf::Vector2f position;
     float intervalSec{3.2f};
     float timer{0.0f};
+    bool isSteamVent{false}; // If true, masks player noise nearby when pulsing
+};
+
+struct AcousticHazardZone {
+    sf::Vector2f position;
+    float radius{44.0f};
+    std::string label{"BRITTLE SHALE"};
 };
 
 struct RoomDefinition {
@@ -44,10 +51,12 @@ struct RoomDefinition {
     std::string name;
     std::string sectorTitle;
     std::string objectiveText;
-    sf::Vector2f playerDefaultSpawn{150.0f, 400.0f};
+    sf::Vector2f playerDefaultSpawn{145.0f, 400.0f};
     std::vector<WallSegment> walls;
     std::vector<RoomPortal> portals;
     std::vector<InteractiveMechanism> mechanisms;
+    std::vector<AcousticResonator> resonators;
+    std::vector<AcousticHazardZone> hazards;
     std::vector<LoreCollectible> collectibles;
     std::vector<AmbientEmitter> ambientEmitters;
     std::vector<sf::Vector2f> enemyPatrolNodes;
@@ -84,6 +93,11 @@ public:
         const std::vector<int>& loreIds,
         const std::vector<int>& visitedRooms
     );
+
+    // Mathematically verifies via 2D BFS grid pathfinding (with player collision radius)
+    // that all levers, lore logs, and portals in roomId are physically reachable and
+    // locked gates cannot be bypassed when closed.
+    bool verifyRoomTraversability(int roomId, std::string& outError) const;
 
     const std::vector<int>& activatedSwitches() const noexcept { return m_activatedSwitches; }
     const std::vector<int>& collectedLoreIds() const noexcept { return m_collectedLoreIds; }

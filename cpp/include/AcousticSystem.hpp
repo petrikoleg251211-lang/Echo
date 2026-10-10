@@ -4,6 +4,7 @@
 #include <SFML/Graphics/RenderTarget.hpp>
 #include <SFML/Graphics/VertexArray.hpp>
 #include <SFML/System/Vector2.hpp>
+#include <string>
 #include <vector>
 
 namespace echo {
@@ -12,8 +13,19 @@ struct WallSegment {
     sf::Vector2f a;
     sf::Vector2f b;
     SurfaceMaterial material{SurfaceMaterial::Stone};
-    int doorId{-1}; // -1 if static wall, >= 0 if tied to a harmonic mechanism
+    int doorId{-1}; // -1 if static wall, >= 0 if tied to a harmonic mechanism or resonator
     bool isOpen{false};
+};
+
+// Acoustic Resonance Crystal: charges up when struck by player sonar rays (including reflected rays)
+struct AcousticResonator {
+    int id{0};
+    sf::Vector2f position;
+    float radius{16.0f};
+    float energy{0.0f}; // [0.0, 1.0]; locks at 1.0 once fully energized
+    bool activated{false};
+    int unlocksDoorId{-1};
+    std::string label;
 };
 
 struct AcousticRay {
@@ -28,6 +40,7 @@ struct AcousticRay {
     std::uint8_t maxReflections{cfg::kDefaultMaxReflections};
     WaveSignature signature{WaveSignature::RadialPulse};
     sf::Color tint{56, 189, 248};
+    bool emittedByPlayer{true};
     bool active{false};
 };
 
@@ -81,12 +94,29 @@ public:
         bool emittedByPlayer = true
     );
 
-    void update(float dt, const std::vector<WallSegment>& walls);
+    // Updates rays, wall echoes, and optionally charges AcousticResonators struck by rays.
+    // Returns IDs of any resonators that reached full activation during this step.
+    std::vector<int> update(
+        float dt,
+        const std::vector<WallSegment>& walls,
+        std::vector<AcousticResonator>* resonators = nullptr
+    );
 
-    void render(sf::RenderTarget& target, float ambientVisibility = 0.03f, const std::vector<WallSegment>* walls = nullptr) const;
+    void render(
+        sf::RenderTarget& target,
+        float ambientVisibility = 0.03f,
+        const std::vector<WallSegment>* walls = nullptr
+    ) const;
 
     // Computes how strongly a given point in the world is currently revealed by sound waves/echoes
     float queryIlluminationAt(sf::Vector2f point, sf::Vector2f playerPos) const noexcept;
+
+    // Computes multi-wall material transmission factor in [0.05, 1.0] between sound source and listener
+    static float computeTransmissionFactor(
+        sf::Vector2f source,
+        sf::Vector2f listener,
+        const std::vector<WallSegment>& walls
+    ) noexcept;
 
     const std::vector<AcousticEvent>& recentEvents() const noexcept { return m_recentEvents; }
     void clearRecentEvents() noexcept { m_recentEvents.clear(); }

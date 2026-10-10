@@ -144,15 +144,14 @@ bool EnemyAI::update(
         return true;
     }
 
-    // 1. Evaluate acoustic events emitted in the current frame
+    // 1. Evaluate acoustic events emitted in the current frame using material-aware multi-wall transmission
     for (const auto& ev : acoustics.recentEvents()) {
         if (!ev.emittedByPlayer) continue;
         const float dist = distanceBetween(m_position, ev.origin);
         if (dist > ev.radius * 1.15f) continue;
 
-        const bool occluded = !hasLineOfSight(ev.origin, walls);
-        const float occlusionFactor = occluded ? 0.50f : 1.0f;
-        const float perceived = ev.loudness * occlusionFactor * (1.0f - dist / (ev.radius * 1.25f));
+        const float transmissionFactor = AcousticSystem::computeTransmissionFactor(ev.origin, m_position, walls);
+        const float perceived = ev.loudness * transmissionFactor * (1.0f - dist / (ev.radius * 1.25f));
 
         if (perceived > 0.14f) {
             m_targetPos = ev.origin;

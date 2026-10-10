@@ -262,6 +262,12 @@ void AudioManager::playWaveSignature(WaveSignature sig) {
         case WaveSignature::AmbientDrip:
             playEffect(SoundEffectId::SonarPing, 0.18f, 1.65f);
             break;
+        case WaveSignature::ShaleCrack:
+            playEffect(SoundEffectId::DecoyImpact, 0.90f, 0.78f);
+            break;
+        case WaveSignature::ResonatorHum:
+            playEffect(SoundEffectId::SwitchClunk, 1.0f, 1.25f);
+            break;
     }
 }
 

@@ -297,8 +297,15 @@ void Game::enterRoom(int roomId, sf::Vector2f spawnPos) {
 void Game::saveCheckpoint() {
     SaveData data{};
     data.checkpointRoomId = m_labyrinth.currentRoomId();
+    data.playerPosX = m_player.position().x;
+    data.playerPosY = m_player.position().y;
+    data.playerStamina = m_player.stamina();
     data.decoyCount = m_player.decoyCount();
     data.masterVolume = m_audio.masterVolume();
+    data.rayDensityScale = m_acoustics.rayDensityScale();
+    data.maxReflections = static_cast<int>(m_acoustics.maxReflections());
+    data.ambientVisibility = m_ambientVisibility;
+    data.runTimeSec = m_runTimeSec;
     data.activatedSwitches = m_labyrinth.activatedSwitches();
     data.collectedLoreIds = m_labyrinth.collectedLoreIds();
     data.visitedRooms = m_labyrinth.visitedRooms();
@@ -320,11 +327,16 @@ bool Game::loadCheckpoint() {
     m_labyrinth.restoreState(data.activatedSwitches, data.collectedLoreIds, data.visitedRooms);
     m_player.setDecoyCount(data.decoyCount);
     m_audio.setMasterVolume(data.masterVolume);
+    m_acoustics.setRayDensityScale(data.rayDensityScale);
+    m_acoustics.setMaxReflections(static_cast<std::uint8_t>(data.maxReflections));
+    m_ambientVisibility = data.ambientVisibility;
+    m_runTimeSec = data.runTimeSec;
 
     m_labyrinth.setCurrentRoom(data.checkpointRoomId);
-    const sf::Vector2f spawn = m_labyrinth.currentRoom().playerDefaultSpawn;
+    const sf::Vector2f spawn{data.playerPosX, data.playerPosY};
     m_acoustics.clear();
     m_player.reset(spawn);
+    m_player.setStamina(data.playerStamina);
     m_enemy.configurePatrol(m_labyrinth.currentRoom().enemyPatrolNodes);
     m_acoustics.emitPulse(spawn, 360.0f, 400.0f, 0.85f, 90, WaveSignature::RadialPulse, 0.0f, 6.2831853f, false);
 
@@ -540,6 +552,7 @@ void Game::updatePlaying(float dt) {
     m_statusBannerTimer = std::max(0.0f, m_statusBannerTimer - dt);
     m_loreDisplayTimer = std::max(0.0f, m_loreDisplayTimer - dt);
     m_cameraShakeTimer = std::max(0.0f, m_cameraShakeTimer - dt);
+    m_shaleCrackCooldown = std::max(0.0f, m_shaleCrackCooldown - dt);
 
     sf::Vector2f moveInput{0.0f, 0.0f};
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::W) || sf::Keyboard::isKeyPressed(sf::Keyboard::Up)) moveInput.y -= 1.0f;
@@ -556,18 +569,55 @@ void Game::updatePlaying(float dt) {
 
     auto& room = m_labyrinth.currentRoomMut();
 
-    // Update ambient cistern water drips
+    // Update ambient cistern water drips & steam vents
     for (auto& emitter : room.ambientEmitters) {
         emitter.timer += dt;
         if (emitter.timer >= emitter.intervalSec) {
             emitter.timer = 0.0f;
-            m_acoustics.emitPulse(emitter.position, 210.0f, 165.0f, 0.35f, 24, WaveSignature::AmbientDrip, 0.0f, 6.2831853f, false);
+            m_acoustics.emitPulse(
+                emitter.position,
+                emitter.isSteamVent ? 245.0f : 210.0f,
+                emitter.isSteamVent ? 210.0f : 165.0f,
+                emitter.isSteamVent ? 0.48f : 0.35f,
+                28,
+                WaveSignature::AmbientDrip,
+                0.0f,
+                6.2831853f,
+                false
+            );
         }
     }
 
+    const sf::Vector2f prevPos = m_player.position();
     WaveSignature emittedSig = WaveSignature::FootstepWalk;
     if (m_player.update(dt, moveInput, stance, m_mouseWorldPos, room.walls, m_acoustics, emittedSig)) {
         m_audio.playWaveSignature(emittedSig);
+    }
+
+    // Check Brittle Shale hazard zones: walking/sprinting across them cracks the floor loudly!
+    const bool playerMoved = distSq(prevPos, m_player.position()) > 0.05f;
+    if (playerMoved && m_player.activeStance() != MovementStance::Sneak && m_shaleCrackCooldown <= 0.0f) {
+        for (const auto& hz : room.hazards) {
+            if (distSq(m_player.position(), hz.position) <= hz.radius * hz.radius) {
+                m_shaleCrackCooldown = 1.40f;
+                m_acoustics.emitPulse(
+                    m_player.position(),
+                    415.0f,
+                    550.0f,
+                    1.20f,
+                    96,
+                    WaveSignature::ShaleCrack,
+                    0.0f,
+                    6.2831853f,
+                    true
+                );
+                m_audio.playWaveSignature(WaveSignature::ShaleCrack);
+                m_cameraShakeTimer = 0.16f;
+                m_statusBannerText = "BRITTLE SHALE CRACKED! HOLD [LSHIFT] TO SNEAK SILENTLY";
+                m_statusBannerTimer = 3.2f;
+                break;
+            }
+        }
     }
 
     // Auto-collect lore when stepping directly onto terminal
@@ -587,7 +637,20 @@ void Game::updatePlaying(float dt) {
     const float dangerRatio = m_enemy.isActive() ? (m_enemy.suspicion() / 100.0f) : 0.0f;
     m_audio.updateHeartbeat(dangerRatio, dt);
 
-    m_acoustics.update(dt, room.walls);
+    const auto newlyChargedResonators = m_acoustics.update(dt, room.walls, &room.resonators);
+    for (int resId : newlyChargedResonators) {
+        m_labyrinth.activateSwitch(resId);
+        m_audio.playWaveSignature(WaveSignature::ResonatorHum);
+        m_cameraShakeTimer = 0.26f;
+        m_statusBannerText = "HARMONIC RESONATOR CHARGED - EAST RESONANCE GATE UNSEALED";
+        m_statusBannerTimer = 4.2f;
+        for (const auto& res : room.resonators) {
+            if (res.id == resId) {
+                m_acoustics.emitPulse(res.position, 440.0f, 640.0f, 1.30f, 120, WaveSignature::ResonatorHum, 0.0f, 6.2831853f, false);
+            }
+        }
+    }
+
     m_acoustics.clearRecentEvents();
 
     if (m_enemy.hasCaughtPlayer()) {
@@ -757,6 +820,70 @@ void Game::renderInteractiveObjects() {
                 TextAlign::Center
             );
         }
+    }
+
+    // Harmonic Resonator Crystals (charged by sonar rays)
+    for (const auto& res : room.resonators) {
+        const float illum = std::max(0.36f, m_acoustics.queryIlluminationAt(res.position, playerPos));
+        const auto alpha = static_cast<sf::Uint8>(illum * 245.0f);
+        const sf::Color col = res.activated
+            ? sf::Color(52, 211, 153, alpha)
+            : sf::Color(34, 211, 238, alpha);
+
+        sf::CircleShape outer(res.radius);
+        outer.setOrigin(res.radius, res.radius);
+        outer.setPosition(res.position);
+        outer.setFillColor(sf::Color(12, 28, 42, static_cast<sf::Uint8>(illum * 140.0f)));
+        outer.setOutlineThickness(2.0f);
+        outer.setOutlineColor(col);
+        m_window.draw(outer);
+
+        const float coreSize = 8.0f + res.energy * 6.0f;
+        sf::RectangleShape crystal({coreSize, coreSize});
+        crystal.setOrigin(coreSize * 0.5f, coreSize * 0.5f);
+        crystal.setPosition(res.position);
+        crystal.setRotation(45.0f + m_runTimeSec * 35.0f);
+        crystal.setFillColor(col);
+        m_window.draw(crystal);
+
+        char resLabel[64];
+        if (res.activated) {
+            std::snprintf(resLabel, sizeof(resLabel), "RESONATOR LOCKED [100%%]");
+        } else {
+            std::snprintf(resLabel, sizeof(resLabel), "HIT WITH SONAR [%d%%]", static_cast<int>(res.energy * 100.0f));
+        }
+        m_ui.drawText(
+            m_window,
+            resLabel,
+            {res.position.x, res.position.y - res.radius - 16.0f},
+            10.5f,
+            col,
+            TextAlign::Center
+        );
+    }
+
+    // Brittle Shale Acoustic Hazard Zones
+    for (const auto& hz : room.hazards) {
+        const float illum = m_acoustics.queryIlluminationAt(hz.position, playerPos);
+        if (illum <= 0.08f) continue;
+        const auto alpha = static_cast<sf::Uint8>(illum * 195.0f);
+
+        sf::CircleShape zone(hz.radius);
+        zone.setOrigin(hz.radius, hz.radius);
+        zone.setPosition(hz.position);
+        zone.setFillColor(sf::Color(48, 28, 10, static_cast<sf::Uint8>(illum * 65.0f)));
+        zone.setOutlineThickness(1.5f);
+        zone.setOutlineColor(sf::Color(251, 191, 36, alpha));
+        m_window.draw(zone);
+
+        m_ui.drawText(
+            m_window,
+            "BRITTLE SHALE [SNEAK]",
+            {hz.position.x, hz.position.y - 5.0f},
+            9.5f,
+            sf::Color(251, 191, 36, alpha),
+            TextAlign::Center
+        );
     }
 }
 
@@ -1053,20 +1180,87 @@ void Game::renderControlsOverlay() {
 }
 
 int Game::runSelfTest(const std::string& exeDir) {
-    std::cout << "[SelfTest] Starting EchoLabyrinth C++17 integration tests...\n";
+    std::cout << "[SelfTest] Starting EchoLabyrinth C++17 comprehensive verification suite...\n";
 
-    // 1. Verify Labyrinth 15-room topology, portals, switches, and collectibles
+    // 1. Verify Labyrinth 15-room topology & mathematical BFS traversability of all 15 chambers
     Labyrinth lab;
     if (lab.roomCount() != 15) {
         std::cerr << "[SelfTest] FAIL: Expected 15 rooms, got " << lab.roomCount() << "\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS: Labyrinth initialized with " << lab.roomCount() << " interconnected rooms.\n";
+    for (int r = 0; r < 15; ++r) {
+        std::string travErr;
+        if (!lab.verifyRoomTraversability(r, travErr)) {
+            std::cerr << "[SelfTest] FAIL: Room " << (r + 1) << " failed BFS traversability: " << travErr << "\n";
+            return 1;
+        }
+    }
+    std::cout << "[SelfTest] PASS [1/8]: All 15 chambers verified via 2D BFS grid pathfinding (levers, logs, and locked gate barriers).\n";
 
-    // 2. Verify AcousticSystem ray emission, wall intersection, reflection, and echo trace spawning
+    // 2. Verify full 15-room transition graph (forward 0->14->Victory and backward West return spawn positions)
+    lab.resetAllProgress();
+    int currentRoom = 0;
+    bool reachedVictoryExit = false;
+    for (int step = 0; step < 15; ++step) {
+        lab.setCurrentRoom(currentRoom);
+        const auto& rm = lab.currentRoom();
+
+        // Unlock any lever or resonator in this room
+        for (const auto& m : rm.mechanisms) lab.activateSwitch(m.id);
+        for (const auto& res : rm.resonators) lab.activateSwitch(res.id);
+
+        // Verify West portal return spawn is west of any East bulkhead (x < 1020)
+        if (currentRoom > 0) {
+            bool foundWest = false;
+            for (const auto& p : rm.portals) {
+                if (p.targetRoomId == currentRoom - 1) {
+                    foundWest = true;
+                    if (p.targetSpawnPos.x >= 1020.0f) {
+                        std::cerr << "[SelfTest] FAIL: West portal in room " << currentRoom
+                                  << " spawns behind East bulkhead at x=" << p.targetSpawnPos.x << "\n";
+                        return 1;
+                    }
+                }
+            }
+            if (!foundWest) {
+                std::cerr << "[SelfTest] FAIL: Missing West return portal in room " << currentRoom << "\n";
+                return 1;
+            }
+        }
+
+        // Follow East portal
+        bool advanced = false;
+        for (const auto& p : rm.portals) {
+            if (p.isVictoryExit) {
+                if (p.requiredSwitchId != -1 && !lab.isSwitchActivated(p.requiredSwitchId)) {
+                    std::cerr << "[SelfTest] FAIL: Victory exit remained locked after activating switches.\n";
+                    return 1;
+                }
+                reachedVictoryExit = true;
+                advanced = true;
+                break;
+            }
+            if (p.targetRoomId == currentRoom + 1) {
+                currentRoom = p.targetRoomId;
+                advanced = true;
+                break;
+            }
+        }
+        if (!advanced) {
+            std::cerr << "[SelfTest] FAIL: Graph progression broken at room " << currentRoom << "\n";
+            return 1;
+        }
+    }
+    if (!reachedVictoryExit || currentRoom != 14) {
+        std::cerr << "[SelfTest] FAIL: Did not reach Room 15 Victory Exit.\n";
+        return 1;
+    }
+    std::cout << "[SelfTest] PASS [2/8]: Full 15-room progression graph & bidirectional portals verified.\n";
+
+    // 3. Verify AcousticSystem ray propagation, specular reflections, and multi-wall material transmission
     AcousticSystem acoustics;
     acoustics.emitPulse({200.0f, 400.0f}, 420.0f, 650.0f, 1.0f, 120, WaveSignature::RadialPulse);
-    if (acoustics.activeRayCount() == 0 && acoustics.recentEvents().empty()) {
+    if (acoustics.activeRayCount() == 0 || acoustics.recentEvents().empty()) {
         std::cerr << "[SelfTest] FAIL: AcousticSystem failed to emit pulse.\n";
         return 1;
     }
@@ -1077,10 +1271,50 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Acoustic rays did not produce wall echo traces.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS: AcousticSystem ray-wall collisions & reflections verified ("
-              << acoustics.activeEchoCount() << " active wall echo traces).\n";
 
-    // 3. Verify Player movement, wall collision clamping, and decoy stone throw
+    const std::vector<WallSegment> metalWall = {{{500.0f, 100.0f}, {500.0f, 700.0f}, SurfaceMaterial::Metal, -1, false}};
+    const std::vector<WallSegment> mossWall = {{{500.0f, 100.0f}, {500.0f, 700.0f}, SurfaceMaterial::DampMoss, -1, false}};
+    const std::vector<WallSegment> doubleStoneWalls = {
+        {{400.0f, 100.0f}, {400.0f, 700.0f}, SurfaceMaterial::Stone, -1, false},
+        {{600.0f, 100.0f}, {600.0f, 700.0f}, SurfaceMaterial::Stone, -1, false}
+    };
+    const float transMetal = AcousticSystem::computeTransmissionFactor({300.0f, 400.0f}, {700.0f, 400.0f}, metalWall);
+    const float transMoss = AcousticSystem::computeTransmissionFactor({300.0f, 400.0f}, {700.0f, 400.0f}, mossWall);
+    const float transDoubleStone = AcousticSystem::computeTransmissionFactor({300.0f, 400.0f}, {700.0f, 400.0f}, doubleStoneWalls);
+    if (!(transMetal > transMoss && transMoss > transDoubleStone)) {
+        std::cerr << "[SelfTest] FAIL: Material transmission ordering invalid (Metal=" << transMetal
+                  << ", Moss=" << transMoss << ", DoubleStone=" << transDoubleStone << ").\n";
+        return 1;
+    }
+    std::cout << "[SelfTest] PASS [3/8]: AcousticSystem reflections & multi-wall material attenuation verified.\n";
+
+    // 4. Verify AcousticResonator crystal charging via sonar rays unlocks paired ResonanceDoor
+    lab.resetAllProgress();
+    lab.setCurrentRoom(1); // Room 02: Echoing Gallery has Resonator ID 101 at (825, 400)
+    acoustics.clear();
+    auto& room02 = lab.currentRoomMut();
+    if (room02.resonators.empty() || room02.resonators[0].activated) {
+        std::cerr << "[SelfTest] FAIL: Room 02 resonator missing or prematurely active.\n";
+        return 1;
+    }
+    bool resonatorUnlocked = false;
+    for (int burst = 0; burst < 3 && !resonatorUnlocked; ++burst) {
+        acoustics.emitPulse({760.0f, 400.0f}, 445.0f, 560.0f, 1.15f, 96, WaveSignature::DirectionalPing, 0.0f, 1.0471975f, true);
+        for (int step = 0; step < 30; ++step) {
+            const auto unlockedIds = acoustics.update(cfg::kFixedTimeStep, room02.walls, &room02.resonators);
+            for (int id : unlockedIds) {
+                lab.activateSwitch(id);
+                resonatorUnlocked = true;
+            }
+        }
+    }
+    if (!resonatorUnlocked || !lab.isSwitchActivated(101)) {
+        std::cerr << "[SelfTest] FAIL: AcousticResonator did not charge and unlock Gate 101.\n";
+        return 1;
+    }
+    std::cout << "[SelfTest] PASS [4/8]: AcousticResonator crystal energized by sonar rays and unsealed Gate 101.\n";
+
+    // 5. Verify Player movement, circle-segment collision clamping, and decoy stone wall clamping
     Player player;
     player.reset(lab.currentRoom().playerDefaultSpawn);
     WaveSignature sig{};
@@ -1091,9 +1325,9 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Player clipped out of room perimeter.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS: Player movement & circle-segment collision clamping verified.\n";
+    std::cout << "[SelfTest] PASS [5/8]: Player movement, stamina, & circle-segment collision clamping verified.\n";
 
-    // 4. Verify EnemyAI sound reaction and state transitions
+    // 6. Verify EnemyAI full state machine transitions (Patrol -> Investigate -> Search -> Return -> Patrol, Pursue, Attack)
     lab.setCurrentRoom(2); // Room 03 has an active Listener patrol
     EnemyAI enemy;
     enemy.configurePatrol(lab.currentRoom().enemyPatrolNodes);
@@ -1101,39 +1335,82 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: EnemyAI did not enter Patrol state in Room 03.\n";
         return 1;
     }
+    // Emit moderate sound to trigger InvestigateSound
     acoustics.clearRecentEvents();
-    acoustics.emitPulse(enemy.position() + sf::Vector2f{60.0f, 0.0f}, 400.0f, 600.0f, 1.25f, 64, WaveSignature::RadialPulse, 0.0f, 6.2831853f, true);
-    enemy.update(cfg::kFixedTimeStep, {200.0f, 400.0f}, lab.currentRoom().walls, acoustics);
-    if (enemy.state() != EnemyState::InvestigateSound && enemy.state() != EnemyState::PursuePlayer) {
-        std::cerr << "[SelfTest] FAIL: EnemyAI did not react to nearby high-intensity sound pulse.\n";
+    acoustics.emitPulse(enemy.position() + sf::Vector2f{90.0f, 0.0f}, 300.0f, 350.0f, 0.45f, 32, WaveSignature::FootstepWalk, 0.0f, 6.2831853f, true);
+    enemy.update(cfg::kFixedTimeStep, {145.0f, 400.0f}, lab.currentRoom().walls, acoustics);
+    if (enemy.state() != EnemyState::InvestigateSound) {
+        std::cerr << "[SelfTest] FAIL: EnemyAI expected InvestigateSound, got " << EnemyAI::stateName(enemy.state()) << "\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS: EnemyAI transitioned to " << EnemyAI::stateName(enemy.state())
-              << " upon acoustic stimulus.\n";
+    // Advance until EnemyAI reaches sound origin -> transitions to SearchLastKnown -> ReturnToPatrol -> Patrol
+    acoustics.clearRecentEvents();
+    bool sawSearch = false;
+    bool sawReturnOrPatrol = false;
+    for (int step = 0; step < 650; ++step) {
+        enemy.update(cfg::kFixedTimeStep, {145.0f, 400.0f}, lab.currentRoom().walls, acoustics);
+        acoustics.clearRecentEvents();
+        if (enemy.state() == EnemyState::SearchLastKnown) sawSearch = true;
+        if (sawSearch && (enemy.state() == EnemyState::ReturnToPatrol || enemy.state() == EnemyState::Patrol)) {
+            sawReturnOrPatrol = true;
+            break;
+        }
+    }
+    if (!sawSearch || !sawReturnOrPatrol) {
+        std::cerr << "[SelfTest] FAIL: EnemyAI did not complete Investigate -> SearchLastKnown -> ReturnToPatrol cycle.\n";
+        return 1;
+    }
+    // Emit high-intensity sound nearby to trigger PursuePlayer
+    acoustics.emitPulse(enemy.position() + sf::Vector2f{40.0f, 0.0f}, 420.0f, 650.0f, 1.35f, 64, WaveSignature::DecoyImpact, 0.0f, 6.2831853f, true);
+    enemy.update(cfg::kFixedTimeStep, {145.0f, 400.0f}, lab.currentRoom().walls, acoustics);
+    if (enemy.state() != EnemyState::PursuePlayer) {
+        std::cerr << "[SelfTest] FAIL: EnemyAI did not enter PursuePlayer on loud stimulus.\n";
+        return 1;
+    }
+    // Verify Attack state on player contact
+    acoustics.clearRecentEvents();
+    enemy.update(cfg::kFixedTimeStep, enemy.position(), lab.currentRoom().walls, acoustics);
+    if (!enemy.hasCaughtPlayer() || enemy.state() != EnemyState::Attack) {
+        std::cerr << "[SelfTest] FAIL: EnemyAI did not enter Attack state upon player contact.\n";
+        return 1;
+    }
+    std::cout << "[SelfTest] PASS [6/8]: EnemyAI 6-state hunting FSM (Patrol/Investigate/Search/Return/Pursue/Attack) verified.\n";
 
-    // 5. Verify SaveSystem round-trip & corruption resilience
+    // 7. Verify SaveSystem V3 atomic write, FNV-1a checksum, and full state round-trip
     const std::string testSavePath = SaveSystem::resolveSaveFilePath(exeDir, "test_echolabyrinth_save.dat");
     SaveData outSave{};
     outSave.checkpointRoomId = 8;
+    outSave.playerPosX = 512.5f;
+    outSave.playerPosY = 388.0f;
+    outSave.playerStamina = 76.5f;
     outSave.decoyCount = 6;
     outSave.masterVolume = 70.0f;
-    outSave.activatedSwitches = {102, 105};
+    outSave.rayDensityScale = 1.5f;
+    outSave.maxReflections = 4;
+    outSave.ambientVisibility = 0.08f;
+    outSave.runTimeSec = 142.5f;
+    outSave.activatedSwitches = {101, 102, 105};
     outSave.collectedLoreIds = {200, 202, 204};
     outSave.visitedRooms = {0, 1, 2, 3, 4, 5, 6, 7, 8};
 
     if (!SaveSystem::saveToFile(testSavePath, outSave)) {
-        std::cerr << "[SelfTest] FAIL: Could not write save file.\n";
+        std::cerr << "[SelfTest] FAIL: Could not write V3 save file.\n";
         return 1;
     }
     SaveData inSave{};
     if (!SaveSystem::loadFromFile(testSavePath, inSave)) {
-        std::cerr << "[SelfTest] FAIL: Could not read save file.\n";
+        std::cerr << "[SelfTest] FAIL: Could not read valid V3 save file.\n";
         return 1;
     }
     std::remove(testSavePath.c_str());
 
-    if (inSave.checkpointRoomId != 8 || inSave.decoyCount != 6 || inSave.activatedSwitches.size() != 2 || inSave.collectedLoreIds.size() != 3) {
-        std::cerr << "[SelfTest] FAIL: Loaded save data mismatch.\n";
+    if (inSave.checkpointRoomId != 8 || inSave.decoyCount != 6 ||
+        std::abs(inSave.playerPosX - 512.5f) > 0.1f ||
+        std::abs(inSave.playerStamina - 76.5f) > 0.1f ||
+        inSave.maxReflections != 4 ||
+        inSave.activatedSwitches.size() != 3 ||
+        inSave.collectedLoreIds.size() != 3) {
+        std::cerr << "[SelfTest] FAIL: Loaded V3 save data mismatch.\n";
         return 1;
     }
     lab.restoreState(inSave.activatedSwitches, inSave.collectedLoreIds, inSave.visitedRooms);
@@ -1141,50 +1418,23 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Labyrinth::restoreState did not apply loaded save state.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS: SaveSystem serialization and Labyrinth::restoreState verified.\n";
+    std::cout << "[SelfTest] PASS [7/8]: SaveSystem V3 atomic serialization, checksum, & state restoration verified.\n";
 
-    // 6. Verify corrupted / malformed save file resilience
+    // 8. Verify corrupted header and tampered checksum rejection
     {
         std::ofstream badOut(testSavePath, std::ios::trunc);
-        badOut << "CORRUPTED_HEADER\nroom -999\ndecoys 999999\n";
+        badOut << "ECHOLABYRINTH_SAVE_V3\nroom 14\ndecoys 99\nchecksum 12345\n";
     }
     SaveData badData{};
     if (SaveSystem::loadFromFile(testSavePath, badData)) {
-        std::cerr << "[SelfTest] FAIL: Corrupted save header should be rejected.\n";
+        std::cerr << "[SelfTest] FAIL: Tampered V3 checksum should be rejected.\n";
         std::remove(testSavePath.c_str());
         return 1;
     }
     std::remove(testSavePath.c_str());
-    std::cout << "[SelfTest] PASS: Corrupted save file rejected gracefully without crash.\n";
+    std::cout << "[SelfTest] PASS [8/8]: Tampered save checksum and corrupted files rejected gracefully.\n";
 
-    // 7. Verify all 15 rooms have valid geometry, switches unlock their paired gates, and Room 15 has the Victory exit
-    lab.resetAllProgress();
-    bool foundVictoryPortal = false;
-    for (int r = 0; r < 15; ++r) {
-        lab.setCurrentRoom(r);
-        const auto& room = lab.currentRoom();
-        if (room.walls.empty() || room.portals.empty()) {
-            std::cerr << "[SelfTest] FAIL: Room " << r << " has empty walls or portals.\n";
-            return 1;
-        }
-        for (const auto& mech : room.mechanisms) {
-            lab.activateSwitch(mech.id);
-            if (!lab.isSwitchActivated(mech.id)) {
-                std::cerr << "[SelfTest] FAIL: Switch " << mech.id << " failed to activate.\n";
-                return 1;
-            }
-        }
-        for (const auto& p : room.portals) {
-            if (p.isVictoryExit) foundVictoryPortal = true;
-        }
-    }
-    if (!foundVictoryPortal) {
-        std::cerr << "[SelfTest] FAIL: No Victory exit portal found in Room 15.\n";
-        return 1;
-    }
-    std::cout << "[SelfTest] PASS: All 15 chambers, harmonic switches, and Victory exit verified.\n";
-
-    std::cout << "[SelfTest] ALL NATIVE C++17 VERIFICATION CHECKS PASSED.\n";
+    std::cout << "[SelfTest] ALL 8 NATIVE C++17 VERIFICATION SUITES PASSED SUCCESSFULLY.\n";
     return 0;
 }
 

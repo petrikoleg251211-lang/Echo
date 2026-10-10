@@ -24,6 +24,14 @@ sf::Vector2f normalizeOrZero(sf::Vector2f v) noexcept {
     return {v.x * inv, v.y * inv};
 }
 
+sf::Vector2f closestPointOnSegment(sf::Vector2f p, sf::Vector2f a, sf::Vector2f b) noexcept {
+    const sf::Vector2f ab = b - a;
+    const float lenSq = ab.x * ab.x + ab.y * ab.y;
+    if (lenSq < 1e-6f) return a;
+    const float t = std::clamp(((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / lenSq, 0.0f, 1.0f);
+    return a + ab * t;
+}
+
 bool intersectSegments(
     sf::Vector2f p, sf::Vector2f p2,
     sf::Vector2f q, sf::Vector2f q2,
@@ -57,6 +65,8 @@ sf::Color signatureColor(WaveSignature sig) noexcept {
         case WaveSignature::MechanismClunk:  return sf::Color(192, 132, 252);
         case WaveSignature::EnemyTremor:     return sf::Color(239, 68, 68);
         case WaveSignature::AmbientDrip:     return sf::Color(45, 212, 191);
+        case WaveSignature::ShaleCrack:      return sf::Color(251, 191, 36);
+        case WaveSignature::ResonatorHum:    return sf::Color(192, 132, 252);
     }
     return sf::Color(56, 189, 248);
 }
@@ -129,6 +139,9 @@ void AcousticSystem::emitPulse(
         AcousticRay& ray = m_rays[m_rayCursor];
         m_rayCursor = (m_rayCursor + 1) % m_rays.size();
 
+        if (!ray.active) {
+            ++m_activeRayCount;
+        }
         ray.pos = origin;
         ray.prevPos = origin;
         ray.dir = {std::cos(angle), std::sin(angle)};
@@ -140,10 +153,10 @@ void AcousticSystem::emitPulse(
         ray.maxReflections = m_maxReflections;
         ray.signature = signature;
         ray.tint = baseColor;
+        ray.emittedByPlayer = emittedByPlayer;
         ray.active = true;
     }
 
-    // Spawn an expanding wavefront ring visual
     ExpandingWaveRing& ring = m_rings[m_ringCursor];
     m_ringCursor = (m_ringCursor + 1) % m_rings.size();
     ring.origin = origin;
@@ -191,7 +204,22 @@ void AcousticSystem::spawnEchoTrace(
     trace.active = true;
 }
 
-void AcousticSystem::update(float dt, const std::vector<WallSegment>& walls) {
+std::vector<int> AcousticSystem::update(
+    float dt,
+    const std::vector<WallSegment>& walls,
+    std::vector<AcousticResonator>* resonators
+) {
+    std::vector<int> newlyActivatedResonators;
+
+    // Slowly decay unactivated resonator energy over time so player must hit it with a coherent burst
+    if (resonators != nullptr) {
+        for (auto& res : *resonators) {
+            if (!res.activated && res.energy > 0.0f) {
+                res.energy = std::max(0.0f, res.energy - 0.18f * dt);
+            }
+        }
+    }
+
     m_activeRayCount = 0;
     for (auto& ray : m_rays) {
         if (!ray.active) continue;
@@ -199,6 +227,25 @@ void AcousticSystem::update(float dt, const std::vector<WallSegment>& walls) {
         const float stepDist = ray.speed * dt;
         ray.prevPos = ray.pos;
         const sf::Vector2f nextPos = ray.pos + ray.dir * stepDist;
+
+        // Check if this ray energizes an AcousticResonator
+        if (resonators != nullptr && ray.emittedByPlayer &&
+            (ray.signature == WaveSignature::DirectionalPing ||
+             ray.signature == WaveSignature::RadialPulse ||
+             ray.signature == WaveSignature::DecoyImpact)) {
+            for (auto& res : *resonators) {
+                if (res.activated) continue;
+                const sf::Vector2f c = closestPointOnSegment(res.position, ray.pos, nextPos);
+                const sf::Vector2f d = res.position - c;
+                if (d.x * d.x + d.y * d.y <= res.radius * res.radius) {
+                    res.energy = std::min(1.0f, res.energy + ray.intensity * 0.14f);
+                    if (res.energy >= 1.0f) {
+                        res.activated = true;
+                        newlyActivatedResonators.push_back(res.id);
+                    }
+                }
+            }
+        }
 
         float bestT = 2.0f;
         sf::Vector2f bestHit{};
@@ -272,19 +319,41 @@ void AcousticSystem::update(float dt, const std::vector<WallSegment>& walls) {
             ring.active = false;
         }
     }
+
+    return newlyActivatedResonators;
+}
+
+float AcousticSystem::computeTransmissionFactor(
+    sf::Vector2f source,
+    sf::Vector2f listener,
+    const std::vector<WallSegment>& walls
+) noexcept {
+    float factor = 1.0f;
+    int hitCount = 0;
+
+    for (const auto& wall : walls) {
+        if (wall.isOpen) continue;
+        float t = 0.0f;
+        sf::Vector2f pt{};
+        if (intersectSegments(source, listener, wall.a, wall.b, t, pt)) {
+            factor *= getMaterialProperties(wall.material).transmission;
+            ++hitCount;
+            if (hitCount >= 4) break;
+        }
+    }
+
+    return std::clamp(factor, 0.08f, 1.0f);
 }
 
 float AcousticSystem::queryIlluminationAt(sf::Vector2f point, sf::Vector2f playerPos) const noexcept {
     float maxIllum = 0.0f;
 
-    // Tactile close-range player aura (very small radius around surveyor)
     const sf::Vector2f dp = point - playerPos;
     const float distPlayerSq = dp.x * dp.x + dp.y * dp.y;
     if (distPlayerSq < 75.0f * 75.0f) {
         maxIllum = std::max(maxIllum, 1.0f - std::sqrt(distPlayerSq) / 75.0f);
     }
 
-    // Check active wall echoes
     for (const auto& echo : m_echoes) {
         if (!echo.active) continue;
         const sf::Vector2f d = point - echo.hitPoint;
@@ -296,7 +365,6 @@ float AcousticSystem::queryIlluminationAt(sf::Vector2f point, sf::Vector2f playe
         }
     }
 
-    // Check active rays
     for (const auto& ray : m_rays) {
         if (!ray.active) continue;
         const sf::Vector2f d = point - ray.pos;
@@ -319,7 +387,6 @@ void AcousticSystem::render(
     m_echoLines.clear();
     m_waveLines.clear();
 
-    // 1. Subtle ambient architectural silhouette if ambientVisibility > 0
     if (walls != nullptr && ambientVisibility > 0.002f) {
         const auto ambAlpha = static_cast<sf::Uint8>(std::clamp(ambientVisibility * 255.0f, 0.0f, 90.0f));
         for (const auto& w : *walls) {
@@ -332,7 +399,6 @@ void AcousticSystem::render(
         }
     }
 
-    // 2. Render 3D-extruded wall illumination bevels and glowing acoustic edges
     for (const auto& echo : m_echoes) {
         if (!echo.active) continue;
         const float lifeRatio = 1.0f - (echo.age / echo.lifetime);
@@ -342,7 +408,6 @@ void AcousticSystem::render(
         const sf::Vector2f p1 = echo.hitPoint - echo.tangent * echo.halfLength;
         const sf::Vector2f p2 = echo.hitPoint + echo.tangent * echo.halfLength;
 
-        // Extrude away from the side the wave struck to depict solid masonry depth
         sf::Color fillOuter = mp.fillTint;
         fillOuter.a = static_cast<sf::Uint8>(smoothAlpha * 185.0f);
         sf::Color fillInner = mp.fillTint;
@@ -357,7 +422,6 @@ void AcousticSystem::render(
             fillInner
         );
 
-        // Soft inner bloom toward the room
         sf::Color glowOuter = mp.echoColor;
         glowOuter.a = static_cast<sf::Uint8>(smoothAlpha * 65.0f);
         sf::Color glowInner = mp.echoColor;
@@ -371,13 +435,11 @@ void AcousticSystem::render(
             glowInner
         );
 
-        // Crisp primary acoustic strike line
         sf::Color edgeColor = mp.echoColor;
         edgeColor.a = static_cast<sf::Uint8>(smoothAlpha * 235.0f);
         m_echoLines.append(sf::Vertex(p1, edgeColor));
         m_echoLines.append(sf::Vertex(p2, edgeColor));
 
-        // Material-specific texture accents (rivets for Metal, dual ripple for Water)
         if (echo.material == SurfaceMaterial::Water) {
             sf::Color rippleCol = mp.echoColor;
             rippleCol.a = static_cast<sf::Uint8>(smoothAlpha * 120.0f);
@@ -391,7 +453,6 @@ void AcousticSystem::render(
         }
     }
 
-    // 3. Render expanding wave rings
     for (const auto& ring : m_rings) {
         if (!ring.active) continue;
         const float progress = ring.radius / std::max(1.0f, ring.maxRadius);
@@ -412,7 +473,6 @@ void AcousticSystem::render(
         }
     }
 
-    // 4. Render propagating ray wavefront streaks
     for (const auto& ray : m_rays) {
         if (!ray.active) continue;
         const float fade = 1.0f - (ray.traveled / std::max(1.0f, ray.maxDistance));

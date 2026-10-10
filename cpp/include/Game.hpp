@@ -14,6 +14,7 @@
 #include <SFML/Graphics/View.hpp>
 #include <SFML/Window/Keyboard.hpp>
 #include <SFML/Window/Mouse.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -38,7 +39,7 @@ public:
 
     int run();
 
-    // Runs deterministic headless verification of all core C++ gameplay systems & 3D assets
+    // Runs deterministic headless verification of all C++17 roguelike, acoustic, AI, save, and 3D asset systems
     static int runSelfTest(const std::string& exeDir = "");
 
 private:
@@ -57,13 +58,15 @@ private:
     void renderInteractiveObjects();
     void renderVignetteAndDust();
     void renderHud();
+    void renderCornerMinimap();
     void renderMinimapOverlay();
     void renderMenuOverlay();
     void renderSettingsOverlay();
     void renderControlsOverlay();
 
-    void enterRoom(int roomId, sf::Vector2f spawnPos);
-    void startNewGame();
+    void enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild = true);
+    void spawnWaveForCurrentRoom(int waveIndex);
+    void startNewGame(std::uint32_t customSeed = 0);
     void saveCheckpoint();
     bool loadCheckpoint();
     void tryInteract();
@@ -84,7 +87,8 @@ private:
     UiRenderer m_ui;
     Labyrinth m_labyrinth;
     Player m_player;
-    EnemyAI m_enemy;
+    std::vector<EnemyAI> m_enemies;
+    int m_currentWaveIndex{0};
 
     AppState m_state{AppState::MainMenu};
     AppState m_previousState{AppState::MainMenu};
@@ -105,6 +109,13 @@ private:
     float m_menuPulseTimer{0.0f};
     float m_cameraShakeTimer{0.0f};
     float m_shaleCrackCooldown{0.0f};
+
+    // Roguelike Run & Meta-Progression Counters
+    int m_enemiesDisruptedThisRun{0};
+    int m_metaTotalRuns{1};
+    int m_metaTotalVictories{0};
+    int m_metaBossesDefeated{0};
+
     bool m_showMinimap{false};
     bool m_isFullscreen{false};
 };

@@ -46,7 +46,13 @@ Player::Player() = default;
 
 void Player::reset(sf::Vector2f spawnPos) noexcept {
     m_position = spawnPos;
+    m_health = 6;
+    m_maxHealth = 6;
+    m_invulnTimer = 0.0f;
     m_stamina = 100.0f;
+    m_echoShards = 0;
+    m_decoyCount = 4;
+    m_relics.clear();
     m_stepAccumulator = 0.0f;
     m_walkCyclePhase = 0.0f;
     m_breathPhase = 0.0f;
@@ -55,6 +61,88 @@ void Player::reset(sf::Vector2f spawnPos) noexcept {
     m_cooldownPulse = 0.0f;
     m_cooldownDecoy = 0.0f;
     m_decoyProj.active = false;
+}
+
+void Player::setPosition(sf::Vector2f pos) noexcept {
+    m_position = pos;
+    m_decoyProj.active = false;
+}
+
+void Player::heal(int amount) noexcept {
+    if (amount <= 0) return;
+    m_health = std::min(m_maxHealth, m_health + amount);
+}
+
+void Player::restoreStamina(float amount) noexcept {
+    if (amount <= 0.0f) return;
+    m_stamina = std::min(100.0f, m_stamina + amount);
+}
+
+bool Player::spendEchoShards(int cost) noexcept {
+    if (cost < 0 || m_echoShards < cost) return false;
+    m_echoShards -= cost;
+    return true;
+}
+
+bool Player::hasRelic(RelicId id) const noexcept {
+    return std::find(m_relics.begin(), m_relics.end(), id) != m_relics.end();
+}
+
+bool Player::addRelic(RelicId id, AcousticSystem* acoustics) {
+    if (hasRelic(id)) return false;
+    m_relics.push_back(id);
+
+    if (id == RelicId::PiezoArmorCore) {
+        m_maxHealth += 2;
+        m_health = std::min(m_maxHealth, m_health + 2);
+    } else if (id == RelicId::PhantomDecoyRig) {
+        m_decoyCount += 3;
+    } else if (id == RelicId::PrismaticMirror && acoustics != nullptr) {
+        const auto nextRefl = static_cast<std::uint8_t>(std::min<int>(6, acoustics->maxReflections() + 2));
+        acoustics->setMaxReflections(nextRefl);
+    }
+    return true;
+}
+
+float Player::sonarDamageMultiplier(bool isReflectedHit) const noexcept {
+    float mult = 1.0f;
+    if (hasRelic(RelicId::FocusedTransducer)) {
+        mult *= 1.40f;
+    }
+    if (isReflectedHit) {
+        mult *= hasRelic(RelicId::PrismaticMirror) ? 1.55f : 1.20f;
+        // Synergy: FocusedTransducer + PrismaticMirror = Phase-Locked Resonance Beam
+        if (hasRelic(RelicId::FocusedTransducer) && hasRelic(RelicId::PrismaticMirror)) {
+            mult *= 1.25f;
+        }
+    }
+    return mult;
+}
+
+float Player::resonatorChargeMultiplier() const noexcept {
+    return hasRelic(RelicId::EchoSiphonCoil) ? 2.0f : 1.0f;
+}
+
+bool Player::applyDamage(int amount, AcousticSystem& acoustics) {
+    if (m_invulnTimer > 0.0f || m_health <= 0 || amount <= 0) return false;
+    m_health = std::max(0, m_health - amount);
+    m_invulnTimer = 1.15f;
+
+    // Retaliatory shockwave if PiezoArmorCore is equipped
+    if (hasRelic(RelicId::PiezoArmorCore)) {
+        acoustics.emitPulse(
+            m_position,
+            450.0f,
+            480.0f,
+            1.35f,
+            96,
+            WaveSignature::RadialPulse,
+            0.0f,
+            6.2831853f,
+            true
+        );
+    }
+    return true;
 }
 
 bool Player::update(
@@ -68,6 +156,7 @@ bool Player::update(
 ) {
     bool emittedSound = false;
 
+    m_invulnTimer = std::max(0.0f, m_invulnTimer - dt);
     m_cooldownPing = std::max(0.0f, m_cooldownPing - dt);
     m_cooldownPulse = std::max(0.0f, m_cooldownPulse - dt);
     m_cooldownDecoy = std::max(0.0f, m_cooldownDecoy - dt);
@@ -83,17 +172,34 @@ bool Player::update(
         m_decoyProj.progress += dt / std::max(0.08f, m_decoyProj.duration);
         if (m_decoyProj.progress >= 1.0f) {
             m_decoyProj.active = false;
+            const bool hasPhantomDecoy = hasRelic(RelicId::PhantomDecoyRig);
+            const float decoyRadius = hasPhantomDecoy ? 740.0f : 600.0f;
+            const float decoyIntensity = hasPhantomDecoy ? 1.65f : 1.38f;
             acoustics.emitPulse(
                 m_decoyProj.targetPos,
-                410.0f,
-                600.0f,
-                1.38f,
-                120,
+                420.0f,
+                decoyRadius,
+                decoyIntensity,
+                hasPhantomDecoy ? 160 : 120,
                 WaveSignature::DecoyImpact,
                 0.0f,
                 6.2831853f,
                 true
             );
+            // Synergy: PhantomDecoyRig + PrismaticMirror emits a secondary harmonic shatter wave
+            if (hasPhantomDecoy && hasRelic(RelicId::PrismaticMirror)) {
+                acoustics.emitPulse(
+                    m_decoyProj.targetPos,
+                    520.0f,
+                    500.0f,
+                    1.25f,
+                    96,
+                    WaveSignature::DirectionalPing,
+                    0.0f,
+                    6.2831853f,
+                    true
+                );
+            }
             outEmittedSignature = WaveSignature::DecoyImpact;
             emittedSound = true;
         } else {
@@ -102,76 +208,87 @@ bool Player::update(
         }
     }
 
-    const float inputLenSq = moveInput.x * moveInput.x + moveInput.y * moveInput.y;
-    const bool isMoving = inputLenSq > 0.01f;
+    float inputLen = std::sqrt(moveInput.x * moveInput.x + moveInput.y * moveInput.y);
+    const bool isMoving = (inputLen > 0.05f);
+    if (isMoving) {
+        moveInput /= inputLen;
+    }
 
     m_activeStance = requestedStance;
-    if (m_activeStance == MovementStance::Sprint && m_stamina <= 6.0f) {
+    if (m_activeStance == MovementStance::Sprint && (!isMoving || m_stamina <= 3.0f)) {
         m_activeStance = MovementStance::Walk;
     }
 
+    const float regenScale = hasRelic(RelicId::ResonanceCapacitor) ? 1.35f : 1.0f;
+    if (isMoving && m_activeStance == MovementStance::Sprint) {
+        m_stamina = std::max(0.0f, m_stamina - 25.0f * dt);
+    } else {
+        const float regenRate = isMoving ? 15.0f : 26.0f;
+        m_stamina = std::min(100.0f, m_stamina + regenRate * regenScale * dt);
+    }
+
+    float speed = cfg::kSpeedWalk;
+    float strideThreshold = 42.0f;
+    float stepRadius = 215.0f;
+    float stepIntensity = 0.42f;
+    std::size_t stepRays = 38;
+    WaveSignature stepSig = WaveSignature::FootstepWalk;
+
+    if (m_activeStance == MovementStance::Sneak) {
+        speed = cfg::kSpeedSneak;
+        strideThreshold = 50.0f;
+        stepRadius = 82.0f;
+        stepIntensity = 0.14f;
+        stepRays = 20;
+        stepSig = WaveSignature::FootstepSneak;
+    } else if (m_activeStance == MovementStance::Sprint) {
+        speed = cfg::kSpeedSprint;
+        strideThreshold = 34.0f;
+        stepRadius = 430.0f;
+        stepIntensity = 0.88f;
+        stepRays = 68;
+        stepSig = WaveSignature::FootstepSprint;
+    }
+
+    // MossTreadBoots relic dampens footstep noise radius & intensity by 45%
+    if (hasRelic(RelicId::MossTreadBoots)) {
+        stepRadius *= 0.55f;
+        stepIntensity *= 0.55f;
+    }
+
     if (isMoving) {
-        const float invLen = 1.0f / std::sqrt(inputLenSq);
-        const sf::Vector2f dir = moveInput * invLen;
-
-        float speed = cfg::kSpeedWalk;
-        if (m_activeStance == MovementStance::Sneak) speed = cfg::kSpeedSneak;
-        else if (m_activeStance == MovementStance::Sprint) speed = cfg::kSpeedSprint;
-
-        m_position += dir * (speed * dt);
+        const sf::Vector2f prevPos = m_position;
+        m_position += moveInput * (speed * dt);
         resolveWallCollisions(walls);
 
-        m_walkCyclePhase += speed * dt * 0.14f;
+        const sf::Vector2f actualDelta = m_position - prevPos;
+        const float movedDist = std::sqrt(actualDelta.x * actualDelta.x + actualDelta.y * actualDelta.y);
+        m_stepAccumulator += movedDist;
+        m_walkCyclePhase += movedDist * 0.14f;
 
-        if (m_activeStance == MovementStance::Sprint) {
-            m_stamina = std::max(0.0f, m_stamina - 24.0f * dt);
-        } else {
-            m_stamina = std::min(100.0f, m_stamina + 15.0f * dt);
-        }
-
-        m_stepAccumulator += speed * dt;
-        const float stepStride = (m_activeStance == MovementStance::Sneak)
-            ? 55.0f
-            : (m_activeStance == MovementStance::Sprint ? 64.0f : 58.0f);
-
-        if (m_stepAccumulator >= stepStride) {
+        if (m_stepAccumulator >= strideThreshold) {
             m_stepAccumulator = 0.0f;
-            if (m_activeStance == MovementStance::Sneak) {
-                acoustics.emitPulse(m_position, 225.0f, 118.0f, 0.24f, 24, WaveSignature::FootstepSneak);
-                outEmittedSignature = WaveSignature::FootstepSneak;
-            } else if (m_activeStance == MovementStance::Walk) {
-                acoustics.emitPulse(m_position, 295.0f, 245.0f, 0.56f, 40, WaveSignature::FootstepWalk);
-                outEmittedSignature = WaveSignature::FootstepWalk;
-            } else {
-                acoustics.emitPulse(m_position, 375.0f, 445.0f, 1.02f, 68, WaveSignature::FootstepSprint);
-                outEmittedSignature = WaveSignature::FootstepSprint;
+            acoustics.emitPulse(
+                m_position,
+                340.0f,
+                stepRadius,
+                stepIntensity,
+                stepRays,
+                stepSig,
+                0.0f,
+                6.2831853f,
+                true
+            );
+            if (!emittedSound) {
+                outEmittedSignature = stepSig;
+                emittedSound = true;
             }
-            emittedSound = true;
         }
     } else {
-        m_stamina = std::min(100.0f, m_stamina + 24.0f * dt);
+        m_walkCyclePhase *= std::max(0.0f, 1.0f - dt * 8.0f);
     }
 
     return emittedSound;
-}
-
-SurfaceMaterial Player::detectFloorMaterial(
-    const std::vector<WallSegment>& walls,
-    SurfaceMaterial roomDefault
-) const noexcept {
-    float bestDistSq = 85.0f * 85.0f;
-    SurfaceMaterial mat = roomDefault;
-    for (const auto& w : walls) {
-        if (w.isOpen) continue;
-        const sf::Vector2f c = closestPointOnSegment(m_position, w.a, w.b);
-        const sf::Vector2f d = m_position - c;
-        const float dSq = d.x * d.x + d.y * d.y;
-        if (dSq < bestDistSq) {
-            bestDistSq = dSq;
-            mat = w.material;
-        }
-    }
-    return mat;
 }
 
 void Player::resolveWallCollisions(const std::vector<WallSegment>& walls) noexcept {
@@ -182,32 +299,64 @@ void Player::resolveWallCollisions(const std::vector<WallSegment>& walls) noexce
             const sf::Vector2f delta = m_position - closest;
             const float distSq = delta.x * delta.x + delta.y * delta.y;
             const float minDist = cfg::kPlayerRadius + 2.5f;
-            if (distSq < minDist * minDist && distSq > 1e-6f) {
-                const float dist = std::sqrt(distSq);
-                const sf::Vector2f pushNormal = delta / dist;
-                m_position += pushNormal * (minDist - dist);
+            if (distSq < minDist * minDist) {
+                if (distSq > 1e-6f) {
+                    const float dist = std::sqrt(distSq);
+                    m_position += (delta / dist) * (minDist - dist);
+                } else {
+                    m_position.y += minDist;
+                }
             }
         }
     }
+    m_position.x = std::clamp(m_position.x, 52.0f, cfg::kWorldWidth - 52.0f);
+    m_position.y = std::clamp(m_position.y, 48.0f, cfg::kWorldHeight - 48.0f);
+}
+
+SurfaceMaterial Player::detectFloorMaterial(
+    const std::vector<WallSegment>& walls,
+    SurfaceMaterial roomDefault
+) const noexcept {
+    float bestDistSq = 48.0f * 48.0f;
+    SurfaceMaterial bestMat = roomDefault;
+    for (const auto& w : walls) {
+        if (w.isOpen || w.material == SurfaceMaterial::ResonanceDoor) continue;
+        const sf::Vector2f c = closestPointOnSegment(m_position, w.a, w.b);
+        const sf::Vector2f d = m_position - c;
+        const float dSq = d.x * d.x + d.y * d.y;
+        if (dSq < bestDistSq) {
+            bestDistSq = dSq;
+            bestMat = w.material;
+        }
+    }
+    return bestMat;
 }
 
 bool Player::triggerDirectionalPing(sf::Vector2f aimTarget, AcousticSystem& acoustics) {
     if (m_cooldownPing > 0.0f) return false;
-    m_cooldownPing = cfg::kCooldownPing;
-    m_pingRecoilTimer = 0.24f;
+    const float cdScale = hasRelic(RelicId::ResonanceCapacitor) ? 0.75f : 1.0f;
+    m_cooldownPing = cfg::kCooldownPing * cdScale;
+    m_pingRecoilTimer = 0.25f;
+
     const sf::Vector2f d = aimTarget - m_position;
-    if (d.x * d.x + d.y * d.y > 1.0f) {
+    if (d.x * d.x + d.y * d.y > 4.0f) {
         m_facingAngle = std::atan2(d.y, d.x);
     }
+
+    const bool hasFocused = hasRelic(RelicId::FocusedTransducer);
+    const float range = hasFocused ? 755.0f : 560.0f;
+    const float intensity = hasFocused ? 1.24f : 0.96f;
+    const float spread = hasFocused ? 0.80f : 1.0471975f;
+
     acoustics.emitPulse(
         m_position,
-        445.0f,
-        560.0f,
-        0.92f,
-        64,
+        465.0f,
+        range,
+        intensity,
+        hasFocused ? 84 : 64,
         WaveSignature::DirectionalPing,
         m_facingAngle,
-        1.0471975f,
+        spread,
         true
     );
     return true;
@@ -215,13 +364,16 @@ bool Player::triggerDirectionalPing(sf::Vector2f aimTarget, AcousticSystem& acou
 
 bool Player::triggerRadialPulse(AcousticSystem& acoustics) {
     if (m_cooldownPulse > 0.0f) return false;
-    m_cooldownPulse = cfg::kCooldownRadialPulse;
+    const float cdScale = hasRelic(RelicId::ResonanceCapacitor) ? 0.75f : 1.0f;
+    m_cooldownPulse = cfg::kCooldownRadialPulse * cdScale;
     m_pingRecoilTimer = 0.35f;
+
+    const bool hasFocused = hasRelic(RelicId::FocusedTransducer);
     acoustics.emitPulse(
         m_position,
-        420.0f,
-        690.0f,
-        1.22f,
+        430.0f,
+        hasFocused ? 780.0f : 690.0f,
+        1.25f,
         148,
         WaveSignature::RadialPulse,
         0.0f,
@@ -269,7 +421,6 @@ bool Player::throwDecoy(sf::Vector2f targetPoint, const std::vector<WallSegment>
 }
 
 void Player::render(sf::RenderTarget& target, const AssetManager* assets) const {
-    // 1. Render in-flight decoy projectile with parabolic arc height offset
     if (m_decoyProj.active) {
         const float arcLift = std::sin(m_decoyProj.progress * 3.1415926f) * 16.0f;
         const sf::Vector2f elevatedPos{m_decoyProj.currentPos.x, m_decoyProj.currentPos.y - arcLift};
@@ -292,15 +443,19 @@ void Player::render(sf::RenderTarget& target, const AssetManager* assets) const 
         target.draw(stone);
     }
 
-    // 2. Render Directional Sonar Cone guide lines
-    const float coneHalf = 0.523598f;
+    // Blink briefly during post-hit invulnerability frames
+    if (m_invulnTimer > 0.0f && (static_cast<int>(m_invulnTimer * 18.0f) % 2 == 1)) {
+        return;
+    }
+
+    const float coneHalf = hasRelic(RelicId::FocusedTransducer) ? 0.40f : 0.523598f;
     const sf::Vector2f leftRay{
-        std::cos(m_facingAngle - coneHalf) * 38.0f,
-        std::sin(m_facingAngle - coneHalf) * 38.0f
+        std::cos(m_facingAngle - coneHalf) * 42.0f,
+        std::sin(m_facingAngle - coneHalf) * 42.0f
     };
     const sf::Vector2f rightRay{
-        std::cos(m_facingAngle + coneHalf) * 38.0f,
-        std::sin(m_facingAngle + coneHalf) * 38.0f
+        std::cos(m_facingAngle + coneHalf) * 42.0f,
+        std::sin(m_facingAngle + coneHalf) * 42.0f
     };
 
     sf::VertexArray coneLines(sf::Lines, 4);
@@ -310,7 +465,6 @@ void Player::render(sf::RenderTarget& target, const AssetManager* assets) const 
     coneLines[3] = sf::Vertex(m_position + rightRay, sf::Color(56, 189, 248, 0));
     target.draw(coneLines);
 
-    // 3. Surveyor outer acoustic aura ring (scales with stance + breathing)
     const float breathScale = std::sin(m_breathPhase) * 0.8f;
     const float auraRadius = ((m_activeStance == MovementStance::Sneak)
         ? 15.0f
@@ -323,7 +477,6 @@ void Player::render(sf::RenderTarget& target, const AssetManager* assets) const 
     aura.setOutlineColor(sf::Color(56, 189, 248, 75));
     target.draw(aura);
 
-    // 4. Articulated stride boots & tool arm animation
     const sf::Vector2f forward{std::cos(m_facingAngle), std::sin(m_facingAngle)};
     const sf::Vector2f right{-forward.y, forward.x};
     const float stride = std::sin(m_walkCyclePhase) * 5.5f;
@@ -341,7 +494,6 @@ void Player::render(sf::RenderTarget& target, const AssetManager* assets) const 
     boot.setPosition(rightBootPos);
     target.draw(boot);
 
-    // 5. Render 2.5D SurveyorRig 3D Mesh via AssetManager (or fallback core)
     const sf::Color rimCol = (m_activeStance == MovementStance::Sneak)
         ? sf::Color(45, 212, 191)
         : sf::Color(56, 189, 248);
@@ -370,7 +522,6 @@ void Player::render(sf::RenderTarget& target, const AssetManager* assets) const 
         target.draw(body);
     }
 
-    // 6. Articulated right-hand Acoustic Emitter Dish with recoil glow
     const float recoilOffset = m_pingRecoilTimer * 14.0f;
     const sf::Vector2f dishPos = m_position + right * 8.5f + forward * (10.5f - recoilOffset);
     sf::CircleShape dish(3.8f + m_pingRecoilTimer * 4.0f);

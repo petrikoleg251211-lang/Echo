@@ -94,13 +94,22 @@ public:
         bool emittedByPlayer = true
     );
 
-    // Updates rays, wall echoes, and optionally charges AcousticResonators struck by rays.
-    // Returns IDs of any resonators that reached full activation during this step.
+    // Updates rays, wall echoes, and optionally charges AcousticResonators or reveals Secret Walls (doorId >= 900).
+    // Returns IDs of any resonators or secret doors that reached activation during this step.
     std::vector<int> update(
         float dt,
         const std::vector<WallSegment>& walls,
-        std::vector<AcousticResonator>* resonators = nullptr
+        std::vector<AcousticResonator>* resonators = nullptr,
+        float resonatorChargeScale = 1.0f
     );
+
+    // Consumes player sonar rays (DirectionalPing / RadialPulse / DecoyImpact) intersecting (targetPos, targetRadius),
+    // spawning echo traces on the target and returning total harmonic impact energy.
+    float consumeRayImpactAt(
+        sf::Vector2f targetPos,
+        float targetRadius,
+        bool& outReflectedHit
+    ) noexcept;
 
     void render(
         sf::RenderTarget& target,

@@ -207,7 +207,8 @@ void AcousticSystem::spawnEchoTrace(
 std::vector<int> AcousticSystem::update(
     float dt,
     const std::vector<WallSegment>& walls,
-    std::vector<AcousticResonator>* resonators
+    std::vector<AcousticResonator>* resonators,
+    float resonatorChargeScale
 ) {
     std::vector<int> newlyActivatedResonators;
 
@@ -238,7 +239,7 @@ std::vector<int> AcousticSystem::update(
                 const sf::Vector2f c = closestPointOnSegment(res.position, ray.pos, nextPos);
                 const sf::Vector2f d = res.position - c;
                 if (d.x * d.x + d.y * d.y <= res.radius * res.radius) {
-                    res.energy = std::min(1.0f, res.energy + ray.intensity * 0.14f);
+                    res.energy = std::min(1.0f, res.energy + ray.intensity * 0.14f * resonatorChargeScale);
                     if (res.energy >= 1.0f) {
                         res.activated = true;
                         newlyActivatedResonators.push_back(res.id);
@@ -274,6 +275,18 @@ std::vector<int> AcousticSystem::update(
 
             const MaterialProperties matProps = getMaterialProperties(hitWall->material);
             spawnEchoTrace(bestHit, wallTangent, wallNormal, ray.intensity, hitWall->material);
+
+            // Concealed Secret Door (doorId >= 900): unseals when struck by high-energy player sonar ping or pulse
+            if (hitWall->doorId >= 900 && ray.emittedByPlayer &&
+                (ray.signature == WaveSignature::DirectionalPing ||
+                 ray.signature == WaveSignature::RadialPulse ||
+                 ray.signature == WaveSignature::DecoyImpact) &&
+                ray.intensity >= 0.35f) {
+                if (std::find(newlyActivatedResonators.begin(), newlyActivatedResonators.end(), hitWall->doorId) ==
+                    newlyActivatedResonators.end()) {
+                    newlyActivatedResonators.push_back(hitWall->doorId);
+                }
+            }
 
             ++ray.reflections;
             ray.intensity *= matProps.reflectivity;
@@ -321,6 +334,48 @@ std::vector<int> AcousticSystem::update(
     }
 
     return newlyActivatedResonators;
+}
+
+float AcousticSystem::consumeRayImpactAt(
+    sf::Vector2f targetPos,
+    float targetRadius,
+    bool& outReflectedHit
+) noexcept {
+    outReflectedHit = false;
+    float totalImpact = 0.0f;
+    const float radSq = (targetRadius + 5.0f) * (targetRadius + 5.0f);
+
+    for (auto& ray : m_rays) {
+        if (!ray.active || !ray.emittedByPlayer) continue;
+        if (ray.signature != WaveSignature::DirectionalPing &&
+            ray.signature != WaveSignature::RadialPulse &&
+            ray.signature != WaveSignature::DecoyImpact) {
+            continue;
+        }
+
+        const sf::Vector2f c = closestPointOnSegment(targetPos, ray.prevPos, ray.pos);
+        const sf::Vector2f d = targetPos - c;
+        if (d.x * d.x + d.y * d.y <= radSq) {
+            float weight = 0.85f;
+            if (ray.signature == WaveSignature::DirectionalPing) weight = 1.25f;
+            else if (ray.signature == WaveSignature::DecoyImpact) weight = 1.10f;
+
+            if (ray.reflections > 0) {
+                outReflectedHit = true;
+                weight *= 1.35f;
+            }
+            totalImpact += ray.intensity * weight;
+
+            const sf::Vector2f normal = normalizeOrZero(c - targetPos);
+            const sf::Vector2f tangent{-normal.y, normal.x};
+            spawnEchoTrace(c, tangent, normal, std::min(1.0f, ray.intensity * 1.15f), SurfaceMaterial::ResonanceDoor);
+
+            ray.active = false;
+            if (m_activeRayCount > 0) --m_activeRayCount;
+        }
+    }
+
+    return totalImpact;
 }
 
 float AcousticSystem::computeTransmissionFactor(

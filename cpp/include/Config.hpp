@@ -28,6 +28,103 @@ enum class WaveSignature : std::uint8_t {
     ResonatorHum = 10
 };
 
+enum class CardinalDir : std::uint8_t {
+    North = 0,
+    East = 1,
+    South = 2,
+    West = 3,
+    Count = 4
+};
+
+inline constexpr CardinalDir oppositeDir(CardinalDir dir) noexcept {
+    switch (dir) {
+        case CardinalDir::North: return CardinalDir::South;
+        case CardinalDir::East:  return CardinalDir::West;
+        case CardinalDir::South: return CardinalDir::North;
+        case CardinalDir::West:  return CardinalDir::East;
+        default:                 return CardinalDir::South;
+    }
+}
+
+inline constexpr int dirDeltaX(CardinalDir dir) noexcept {
+    switch (dir) {
+        case CardinalDir::East: return 1;
+        case CardinalDir::West: return -1;
+        default:                return 0;
+    }
+}
+
+inline constexpr int dirDeltaY(CardinalDir dir) noexcept {
+    switch (dir) {
+        case CardinalDir::North: return -1;
+        case CardinalDir::South: return 1;
+        default:                 return 0;
+    }
+}
+
+enum class RoomType : std::uint8_t {
+    Start = 0,      // Safe starting chamber at (0,0)
+    Combat = 1,     // Acoustic enemy encounter; locks doors until cleared
+    Treasure = 2,   // Contains an Acoustic Relic pedestal
+    Secret = 3,     // Concealed behind an illusory wall opened by sonar pulses
+    Puzzle = 4,     // Harmonic Resonator & mirror chamber
+    Sanctuary = 5,  // Safe room: restores hull integrity & saves checkpoint
+    Shop = 6,       // Quartermaster terminal: exchange Echo Shards for upgrades
+    Elite = 7,      // High-threat multi-wave / Warden encounter with Relic reward
+    Boss = 8,       // The Choir Sovereign multi-phase acoustic boss arena
+    FinalExit = 9   // Surface Ascent Shaft unlocked after defeating the Boss
+};
+
+enum class RelicId : std::uint8_t {
+    FocusedTransducer = 0,  // +35% Ping range, narrower cone, +40% sonar damage
+    PrismaticMirror = 1,    // +2 Wall reflections, reflected rays deal +35% damage
+    MossTreadBoots = 2,     // -45% Footstep noise radius & immunity to Brittle Shale
+    ResonanceCapacitor = 3, // +35% Stamina regen & -25% Ping/Pulse cooldowns
+    SubharmonicVisor = 4,   // Reveals Secret rooms on map & boosts passive dark vision
+    PiezoArmorCore = 5,     // +2 Max Hull Integrity & defensive shockwave on hit
+    EchoSiphonCoil = 6,     // Sonar hits restore Stamina & charge Resonators 2x faster
+    PhantomDecoyRig = 7,    // +3 Decoys & Decoy impacts trigger damaging sonic burst
+    Count = 8
+};
+
+enum class RelicRarity : std::uint8_t {
+    Common = 0,
+    Uncommon = 1,
+    Rare = 2,
+    Relic = 3
+};
+
+struct RelicSpec {
+    RelicId id;
+    const char* name;
+    const char* effectSummary;
+    RelicRarity rarity;
+    int shopCostShards;
+    sf::Color tint;
+};
+
+inline RelicSpec getRelicSpec(RelicId id) noexcept {
+    switch (id) {
+        case RelicId::FocusedTransducer:
+            return {id, "FOCUSED TRANSDUCER", "+35% SONAR RANGE & +40% PING DISRUPTION DAMAGE", RelicRarity::Common, 25, sf::Color(56, 189, 248)};
+        case RelicId::PrismaticMirror:
+            return {id, "PRISMATIC LENS", "+2 WALL REFLECTIONS & +35% BOUNCE DAMAGE", RelicRarity::Uncommon, 35, sf::Color(167, 139, 250)};
+        case RelicId::MossTreadBoots:
+            return {id, "BRYOPHYTE TREADS", "-45% FOOTSTEP NOISE & SHALE CRACK IMMUNITY", RelicRarity::Common, 22, sf::Color(52, 211, 153)};
+        case RelicId::ResonanceCapacitor:
+            return {id, "HARMONIC CAPACITOR", "+35% STAMINA REGEN & -25% SONAR COOLDOWNS", RelicRarity::Uncommon, 32, sf::Color(250, 204, 21)};
+        case RelicId::SubharmonicVisor:
+            return {id, "SUBHARMONIC VISOR", "REVEALS SECRET ROOMS ON MAP & +DARK VISION", RelicRarity::Rare, 42, sf::Color(45, 212, 191)};
+        case RelicId::PiezoArmorCore:
+            return {id, "PIEZO ARMOR CORE", "+2 MAX HULL INTEGRITY & RETALIATORY PULSE", RelicRarity::Rare, 45, sf::Color(248, 113, 113)};
+        case RelicId::EchoSiphonCoil:
+            return {id, "ECHO SIPHON COIL", "SONAR HITS RESTORE STAMINA & 2X CRYSTAL CHARGE", RelicRarity::Uncommon, 30, sf::Color(125, 211, 252)};
+        case RelicId::PhantomDecoyRig:
+        default:
+            return {RelicId::PhantomDecoyRig, "PHANTOM DECOY RIG", "+3 DECOYS & LETHAL RESONANCE DECOY BLAST", RelicRarity::Rare, 38, sf::Color(216, 180, 254)};
+    }
+}
+
 enum class AppState : std::uint8_t {
     MainMenu = 0,
     Playing = 1,
@@ -79,6 +176,9 @@ namespace cfg {
     constexpr std::size_t kMaxWaveRings = 48;
     constexpr std::uint8_t kDefaultMaxReflections = 3;
 
+    // Default procedural roguelike run size (configurable 15..60 rooms)
+    constexpr std::size_t kDefaultRunRoomCount = 32;
+
     // Player physical & movement parameters
     constexpr float kPlayerRadius = 12.0f;
     constexpr float kEnemyRadius = 14.0f;
@@ -87,9 +187,9 @@ namespace cfg {
     constexpr float kSpeedSprint = 238.0f;
 
     // Ability cooldowns (seconds)
-    constexpr float kCooldownPing = 0.50f;
-    constexpr float kCooldownRadialPulse = 2.10f;
-    constexpr float kCooldownDecoy = 2.40f;
+    constexpr float kCooldownPing = 0.48f;
+    constexpr float kCooldownRadialPulse = 1.95f;
+    constexpr float kCooldownDecoy = 2.20f;
 } // namespace cfg
 
 } // namespace echo

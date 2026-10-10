@@ -1,7 +1,17 @@
 import cmakeRaw from '../../cpp/CMakeLists.txt?raw';
 import readmeRaw from '../../cpp/README.md?raw';
 import batRaw from '../../cpp/build_windows.bat?raw';
+import manifestRaw from '../../cpp/assets/ASSET_MANIFEST.md?raw';
+import surveyorObjRaw from '../../cpp/assets/models/surveyor_rig.obj?raw';
+import stalkerObjRaw from '../../cpp/assets/models/listener_stalker.obj?raw';
+import wardenObjRaw from '../../cpp/assets/models/listener_warden.obj?raw';
+import crystalObjRaw from '../../cpp/assets/models/resonator_crystal.obj?raw';
+import leverObjRaw from '../../cpp/assets/models/harmonic_lever.obj?raw';
+import terminalObjRaw from '../../cpp/assets/models/surveyor_terminal.obj?raw';
+import turbineObjRaw from '../../cpp/assets/models/vent_turbine.obj?raw';
 import configHppRaw from '../../cpp/include/Config.hpp?raw';
+import assetHppRaw from '../../cpp/include/AssetManager.hpp?raw';
+import assetCppRaw from '../../cpp/src/AssetManager.cpp?raw';
 import gameHppRaw from '../../cpp/include/Game.hpp?raw';
 import gameCppRaw from '../../cpp/src/Game.cpp?raw';
 import audioHppRaw from '../../cpp/include/AudioManager.hpp?raw';
@@ -31,61 +41,79 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/CMakeLists.txt',
     module: 'Build System',
-    summary: 'CMake 3.20+ configuration targeting C++17 & SFML 2.5/2.6 with FetchContent fallback and POST_BUILD Windows DLL copy.',
+    summary: 'CMake 3.20+ configuration targeting C++17 & SFML 2.5/2.6 with POST_BUILD copy of 3D assets/ and Windows runtime DLLs.',
     content: cmakeRaw,
   },
   {
     path: 'cpp/build_windows.bat',
     module: 'Build Script',
-    summary: 'One-click Windows 10/11 CMake configuration, Release build, self-test runner, and executable launcher.',
+    summary: 'One-click Windows 10/11 CMake configuration, Release build, 9-suite self-test runner, and executable launcher.',
     content: batRaw,
   },
   {
     path: 'cpp/README.md',
     module: 'Documentation',
-    summary: 'Ukrainian build and gameplay manual for Windows 10/11 (Visual Studio 2022 + CMake).',
+    summary: 'Ukrainian build, architecture, 2.5D/3D asset pipeline, and gameplay manual for Windows 10/11 (Visual Studio 2022 + CMake).',
     content: readmeRaw,
+  },
+  {
+    path: 'cpp/assets/ASSET_MANIFEST.md',
+    module: 'Asset Manifest (CC0)',
+    summary: 'Complete registry of 3D Wavefront OBJ models, procedural 64x64 RGBA material textures, OpenAL 3D sound effects, and CC0 licensing.',
+    content: manifestRaw,
   },
   {
     path: 'cpp/include/Config.hpp',
     module: 'Core Config & Materials',
-    summary: 'AppState enum, SurfaceMaterial visual/acoustic properties, and pre-allocated pool constants.',
+    summary: 'AppState enum, 6 SurfaceMaterials with reflectivity & transmission coefficients, WaveSignature types, and pool constants.',
     content: configHppRaw,
+  },
+  {
+    path: 'cpp/include/AssetManager.hpp',
+    module: '2.5D/3D Asset Manager',
+    summary: 'Wavefront .obj 3D mesh loader, procedural 64x64 RGBA material texture generator, and 2.5D oblique normal-lit renderer.',
+    content: assetHppRaw,
+  },
+  {
+    path: 'cpp/src/AssetManager.cpp',
+    module: '2.5D/3D Asset Manager',
+    summary: 'Implements OBJ parsing with procedural fallback meshes, 6 material textures, and depth-sorted 2.5D triangle projection.',
+    content: assetCppRaw,
   },
   {
     path: 'cpp/include/Game.hpp',
     module: 'Application & Menus',
-    summary: 'Complete native SFML Game lifecycle, Main/Pause/Settings/Controls/Victory/GameOver menus, HUD, Minimap, and self-test suite.',
+    summary: 'Complete native SFML Game lifecycle, Main/Pause/Settings/Controls/Victory/GameOver menus, HUD, Minimap, and 9-suite self-test.',
     content: gameHppRaw,
   },
   {
     path: 'cpp/src/Game.cpp',
     module: 'Application & Menus',
-    summary: 'Implementation of the 60 Hz fixed-timestep loop, letterbox view scaling, menus, HUD, 15-room minimap, and automated self-tests.',
+    summary: '60 Hz fixed-timestep loop, 2.5D prop rendering, 4-channel audio mixer settings, 15-room minimap, and 9-suite automated self-tests.',
     content: gameCppRaw,
   },
   {
     path: 'cpp/include/AcousticSystem.hpp',
     module: 'Acoustic Simulation',
-    summary: 'Ray-front, WallEchoTrace, and ExpandingWaveRing pools, spatial illumination queries, and VertexArray batching.',
+    summary: 'Ray-front, WallEchoTrace, ExpandingWaveRing, and AcousticResonator pools, multi-wall transmission, and VertexArray batching.',
     content: acousticHppRaw,
   },
   {
     path: 'cpp/src/AcousticSystem.cpp',
     module: 'Acoustic Simulation',
-    summary: '2D segment intersection, specular reflection, 3D wall extrusion quads, material surface details, and additive wave rendering.',
+    summary: '2D ray-segment intersection, specular reflection, 2.5D oblique wall extrusion quads, textured bevels, and additive wave rendering.',
     content: acousticCppRaw,
   },
   {
     path: 'cpp/include/AudioManager.hpp',
-    module: 'Procedural Audio',
-    summary: 'Polyphonic 16-voice sf::Sound pool, procedural 44.1 kHz PCM sf::SoundBuffer synthesizer, and looping ambient drone.',
+    module: '3D Spatial Audio & Music',
+    summary: 'OpenAL 3D spatial positioning, 20-voice polyphonic pool, 29 procedural SoundEffectIds, and 4-layer adaptive soundtrack.',
     content: audioHppRaw,
   },
   {
     path: 'cpp/src/AudioManager.cpp',
-    module: 'Procedural Audio',
-    summary: 'Synthesizes footsteps, directional sonar pings, radial gongs, decoy clatters, mechanical switches, enemy alerts, and cavern drone.',
+    module: '3D Spatial Audio & Music',
+    summary: 'Synthesizes material-specific footsteps, sonar pings, enemy 3D calls, environmental ambience, and 4 crossfading music layers.',
     content: audioCppRaw,
   },
   {
@@ -103,49 +131,49 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/include/Labyrinth.hpp',
     module: 'World & 15-Room Topology',
-    summary: 'RoomDefinition, RoomPortal, InteractiveMechanism, LoreCollectible, and full state restoration interface.',
+    summary: 'RoomDefinition, DecoProp, EnemyVariant (Stalker/Warden), AcousticResonator, AcousticHazardZone, and BFS traversability verifier.',
     content: labyrinthHppRaw,
   },
   {
     path: 'cpp/src/Labyrinth.cpp',
     module: 'World & 15-Room Topology',
-    summary: '6 distinct architectural chamber archetypes across 15 interconnected rooms with sealed Resonance Gate bulkheads.',
+    summary: '15 distinct interconnected chambers with architectural props, brittle shale hazards, resonators, and 2D BFS grid verifier.',
     content: labyrinthCppRaw,
   },
   {
     path: 'cpp/include/Player.hpp',
     module: 'Player Controller',
-    summary: 'MovementStance (Sneak, Walk, Sprint), DecoyProjectile trajectory, and surveyor rendering.',
+    summary: 'MovementStance (Sneak, Walk, Sprint), material floor detector, walk-cycle animation phase, and 2.5D Surveyor rig rendering.',
     content: playerHppRaw,
   },
   {
     path: 'cpp/src/Player.cpp',
     module: 'Player Controller',
-    summary: 'Circle-segment sliding collision, stride-based footstep emission, directional sonar cone, radial pulse, and wall-clamped decoy throw.',
+    summary: 'Circle-segment sliding collision, stride-based footstep emission, directional sonar cone, radial pulse, and 2.5D Surveyor rig.',
     content: playerCppRaw,
   },
   {
     path: 'cpp/include/EnemyAI.hpp',
     module: 'Hostile AI (The Listener)',
-    summary: '6-state sound-hunting FSM with obstacle waypoint steering, sliding collision, and echo-based visibility.',
+    summary: '6-state sound-hunting FSM supporting Stalker and Warden variants with smooth animation state blending and 2.5D mesh rendering.',
     content: enemyHppRaw,
   },
   {
     path: 'cpp/src/EnemyAI.cpp',
     module: 'Hostile AI (The Listener)',
-    summary: 'Perceived loudness calculation with wall occlusion, suspicion decay, waypoint steering, and animated sensor tendrils.',
+    summary: 'Multi-wall material occlusion perception, suspicion decay, waypoint steering, and articulated 2.5D Stalker/Warden carapace.',
     content: enemyCppRaw,
   },
   {
     path: 'cpp/include/SaveSystem.hpp',
     module: 'Persistence & Checkpoints',
-    summary: 'Executable-relative path resolution and full checkpoint/switch/lore/visited state serialization.',
+    summary: 'V3 checkpoint & audio mixer state serialization with FNV-1a checksum verification.',
     content: saveHppRaw,
   },
   {
     path: 'cpp/src/SaveSystem.cpp',
     module: 'Persistence & Checkpoints',
-    summary: 'Corruption-resilient save parser with strict bounds clamping for rooms, decoys, volume, switches, and lore.',
+    summary: 'Atomic .tmp write + rename, FNV-1a checksum validation, and full session restoration.',
     content: saveCppRaw,
   },
   {
@@ -153,5 +181,47 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
     module: 'Entry Point',
     summary: 'Resolves executable directory via std::filesystem, supports --self-test CLI flag, and launches echo::Game.',
     content: mainCppRaw,
+  },
+  {
+    path: 'cpp/assets/models/surveyor_rig.obj',
+    module: '3D Models (OBJ)',
+    summary: '3D Wavefront OBJ mesh for the Surveyor player suit, acoustic visor, and sonar emitter.',
+    content: surveyorObjRaw,
+  },
+  {
+    path: 'cpp/assets/models/listener_stalker.obj',
+    module: '3D Models (OBJ)',
+    summary: '3D Wavefront OBJ mesh for The Listener (agile Stalker carapace variant).',
+    content: stalkerObjRaw,
+  },
+  {
+    path: 'cpp/assets/models/listener_warden.obj',
+    module: '3D Models (OBJ)',
+    summary: '3D Wavefront OBJ mesh for The Listener (armored Heavy Warden juggernaut variant).',
+    content: wardenObjRaw,
+  },
+  {
+    path: 'cpp/assets/models/resonator_crystal.obj',
+    module: '3D Models (OBJ)',
+    summary: '3D Wavefront OBJ mesh for the octahedron Harmonic Resonator Crystal.',
+    content: crystalObjRaw,
+  },
+  {
+    path: 'cpp/assets/models/harmonic_lever.obj',
+    module: '3D Models (OBJ)',
+    summary: '3D Wavefront OBJ mesh for the Harmonic Conduit Lever pedestal.',
+    content: leverObjRaw,
+  },
+  {
+    path: 'cpp/assets/models/surveyor_terminal.obj',
+    module: '3D Models (OBJ)',
+    summary: '3D Wavefront OBJ mesh for the Surveyor Log Terminal console.',
+    content: terminalObjRaw,
+  },
+  {
+    path: 'cpp/assets/models/vent_turbine.obj',
+    module: '3D Models (OBJ)',
+    summary: '3D Wavefront OBJ mesh for the Subterranean Ventilation Turbine rotor.',
+    content: turbineObjRaw,
   },
 ];

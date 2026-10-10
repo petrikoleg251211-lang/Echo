@@ -49,6 +49,8 @@ void Player::reset(sf::Vector2f spawnPos) noexcept {
     m_stamina = 100.0f;
     m_stepAccumulator = 0.0f;
     m_walkCyclePhase = 0.0f;
+    m_breathPhase = 0.0f;
+    m_pingRecoilTimer = 0.0f;
     m_cooldownPing = 0.0f;
     m_cooldownPulse = 0.0f;
     m_cooldownDecoy = 0.0f;
@@ -69,14 +71,14 @@ bool Player::update(
     m_cooldownPing = std::max(0.0f, m_cooldownPing - dt);
     m_cooldownPulse = std::max(0.0f, m_cooldownPulse - dt);
     m_cooldownDecoy = std::max(0.0f, m_cooldownDecoy - dt);
+    m_pingRecoilTimer = std::max(0.0f, m_pingRecoilTimer - dt);
+    m_breathPhase += dt * (m_stamina < 40.0f ? 6.5f : 2.8f);
 
-    // Smoothly orient toward mouse cursor or movement direction
     const sf::Vector2f aimDelta = aimWorldPos - m_position;
     if (aimDelta.x * aimDelta.x + aimDelta.y * aimDelta.y > 9.0f) {
         m_facingAngle = std::atan2(aimDelta.y, aimDelta.x);
     }
 
-    // Update flying decoy stone projectile if active
     if (m_decoyProj.active) {
         m_decoyProj.progress += dt / std::max(0.08f, m_decoyProj.duration);
         if (m_decoyProj.progress >= 1.0f) {
@@ -119,7 +121,7 @@ bool Player::update(
         m_position += dir * (speed * dt);
         resolveWallCollisions(walls);
 
-        m_walkCyclePhase += speed * dt * 0.12f;
+        m_walkCyclePhase += speed * dt * 0.14f;
 
         if (m_activeStance == MovementStance::Sprint) {
             m_stamina = std::max(0.0f, m_stamina - 24.0f * dt);
@@ -153,6 +155,25 @@ bool Player::update(
     return emittedSound;
 }
 
+SurfaceMaterial Player::detectFloorMaterial(
+    const std::vector<WallSegment>& walls,
+    SurfaceMaterial roomDefault
+) const noexcept {
+    float bestDistSq = 85.0f * 85.0f;
+    SurfaceMaterial mat = roomDefault;
+    for (const auto& w : walls) {
+        if (w.isOpen) continue;
+        const sf::Vector2f c = closestPointOnSegment(m_position, w.a, w.b);
+        const sf::Vector2f d = m_position - c;
+        const float dSq = d.x * d.x + d.y * d.y;
+        if (dSq < bestDistSq) {
+            bestDistSq = dSq;
+            mat = w.material;
+        }
+    }
+    return mat;
+}
+
 void Player::resolveWallCollisions(const std::vector<WallSegment>& walls) noexcept {
     for (int iter = 0; iter < 4; ++iter) {
         for (const auto& wall : walls) {
@@ -173,6 +194,7 @@ void Player::resolveWallCollisions(const std::vector<WallSegment>& walls) noexce
 bool Player::triggerDirectionalPing(sf::Vector2f aimTarget, AcousticSystem& acoustics) {
     if (m_cooldownPing > 0.0f) return false;
     m_cooldownPing = cfg::kCooldownPing;
+    m_pingRecoilTimer = 0.24f;
     const sf::Vector2f d = aimTarget - m_position;
     if (d.x * d.x + d.y * d.y > 1.0f) {
         m_facingAngle = std::atan2(d.y, d.x);
@@ -185,7 +207,7 @@ bool Player::triggerDirectionalPing(sf::Vector2f aimTarget, AcousticSystem& acou
         64,
         WaveSignature::DirectionalPing,
         m_facingAngle,
-        1.0471975f, // 60-degree focused sonar cone
+        1.0471975f,
         true
     );
     return true;
@@ -194,6 +216,7 @@ bool Player::triggerDirectionalPing(sf::Vector2f aimTarget, AcousticSystem& acou
 bool Player::triggerRadialPulse(AcousticSystem& acoustics) {
     if (m_cooldownPulse > 0.0f) return false;
     m_cooldownPulse = cfg::kCooldownRadialPulse;
+    m_pingRecoilTimer = 0.35f;
     acoustics.emitPulse(
         m_position,
         420.0f,
@@ -212,8 +235,8 @@ bool Player::throwDecoy(sf::Vector2f targetPoint, const std::vector<WallSegment>
     if (m_decoyCount <= 0 || m_cooldownDecoy > 0.0f || m_decoyProj.active) return false;
     --m_decoyCount;
     m_cooldownDecoy = cfg::kCooldownDecoy;
+    m_pingRecoilTimer = 0.20f;
 
-    // Clamp throw distance and stop just before any intervening wall segment
     sf::Vector2f delta = targetPoint - m_position;
     float dist = std::sqrt(delta.x * delta.x + delta.y * delta.y);
     if (dist > 460.0f) {
@@ -245,70 +268,116 @@ bool Player::throwDecoy(sf::Vector2f targetPoint, const std::vector<WallSegment>
     return true;
 }
 
-void Player::render(sf::RenderTarget& target) const {
-    // 1. Render in-flight decoy projectile if active
+void Player::render(sf::RenderTarget& target, const AssetManager* assets) const {
+    // 1. Render in-flight decoy projectile with parabolic arc height offset
     if (m_decoyProj.active) {
+        const float arcLift = std::sin(m_decoyProj.progress * 3.1415926f) * 16.0f;
+        const sf::Vector2f elevatedPos{m_decoyProj.currentPos.x, m_decoyProj.currentPos.y - arcLift};
+
         sf::VertexArray trail(sf::Lines, 2);
         trail[0] = sf::Vertex(m_decoyProj.startPos, sf::Color(167, 139, 250, 45));
-        trail[1] = sf::Vertex(m_decoyProj.currentPos, sf::Color(167, 139, 250, 210));
+        trail[1] = sf::Vertex(elevatedPos, sf::Color(167, 139, 250, 220));
         target.draw(trail);
+
+        sf::CircleShape shadow(4.0f);
+        shadow.setOrigin(4.0f, 4.0f);
+        shadow.setPosition(m_decoyProj.currentPos);
+        shadow.setFillColor(sf::Color(5, 8, 15, 160));
+        target.draw(shadow);
 
         sf::CircleShape stone(4.5f);
         stone.setOrigin(4.5f, 4.5f);
-        stone.setPosition(m_decoyProj.currentPos);
+        stone.setPosition(elevatedPos);
         stone.setFillColor(sf::Color(216, 180, 254));
         target.draw(stone);
     }
 
     // 2. Render Directional Sonar Cone guide lines
-    const float coneHalf = 0.523598f; // 30 deg
+    const float coneHalf = 0.523598f;
     const sf::Vector2f leftRay{
-        std::cos(m_facingAngle - coneHalf) * 34.0f,
-        std::sin(m_facingAngle - coneHalf) * 34.0f
+        std::cos(m_facingAngle - coneHalf) * 38.0f,
+        std::sin(m_facingAngle - coneHalf) * 38.0f
     };
     const sf::Vector2f rightRay{
-        std::cos(m_facingAngle + coneHalf) * 34.0f,
-        std::sin(m_facingAngle + coneHalf) * 34.0f
+        std::cos(m_facingAngle + coneHalf) * 38.0f,
+        std::sin(m_facingAngle + coneHalf) * 38.0f
     };
 
     sf::VertexArray coneLines(sf::Lines, 4);
-    coneLines[0] = sf::Vertex(m_position, sf::Color(56, 189, 248, 85));
+    coneLines[0] = sf::Vertex(m_position, sf::Color(56, 189, 248, 90));
     coneLines[1] = sf::Vertex(m_position + leftRay, sf::Color(56, 189, 248, 0));
-    coneLines[2] = sf::Vertex(m_position, sf::Color(56, 189, 248, 85));
+    coneLines[2] = sf::Vertex(m_position, sf::Color(56, 189, 248, 90));
     coneLines[3] = sf::Vertex(m_position + rightRay, sf::Color(56, 189, 248, 0));
     target.draw(coneLines);
 
-    // 3. Surveyor outer acoustic aura ring (scales with stance)
-    const float auraRadius = (m_activeStance == MovementStance::Sneak)
+    // 3. Surveyor outer acoustic aura ring (scales with stance + breathing)
+    const float breathScale = std::sin(m_breathPhase) * 0.8f;
+    const float auraRadius = ((m_activeStance == MovementStance::Sneak)
         ? 15.0f
-        : (m_activeStance == MovementStance::Sprint ? 21.0f : 18.0f);
+        : (m_activeStance == MovementStance::Sprint ? 22.0f : 18.0f)) + breathScale;
     sf::CircleShape aura(auraRadius);
     aura.setOrigin(auraRadius, auraRadius);
     aura.setPosition(m_position);
-    aura.setFillColor(sf::Color(14, 30, 48, 90));
+    aura.setFillColor(sf::Color(14, 30, 48, 85));
     aura.setOutlineThickness(1.0f);
     aura.setOutlineColor(sf::Color(56, 189, 248, 75));
     target.draw(aura);
 
-    // 4. Surveyor suit core & directional emitter dish
-    sf::CircleShape body(cfg::kPlayerRadius);
-    body.setOrigin(cfg::kPlayerRadius, cfg::kPlayerRadius);
-    body.setPosition(m_position);
-    body.setFillColor(sf::Color(12, 20, 34));
-    body.setOutlineThickness(2.0f);
-    body.setOutlineColor(
-        m_activeStance == MovementStance::Sneak
-            ? sf::Color(45, 212, 191)
-            : sf::Color(56, 189, 248)
-    );
-    target.draw(body);
-
+    // 4. Articulated stride boots & tool arm animation
     const sf::Vector2f forward{std::cos(m_facingAngle), std::sin(m_facingAngle)};
-    sf::CircleShape visor(4.0f);
-    visor.setOrigin(4.0f, 4.0f);
-    visor.setPosition(m_position + forward * 8.0f);
-    visor.setFillColor(sf::Color(186, 230, 253));
-    target.draw(visor);
+    const sf::Vector2f right{-forward.y, forward.x};
+    const float stride = std::sin(m_walkCyclePhase) * 5.5f;
+
+    const sf::Vector2f leftBootPos = m_position - right * 6.5f + forward * stride;
+    const sf::Vector2f rightBootPos = m_position + right * 6.5f - forward * stride;
+
+    sf::CircleShape boot(3.5f);
+    boot.setOrigin(3.5f, 3.5f);
+    boot.setFillColor(sf::Color(30, 58, 82));
+    boot.setOutlineThickness(1.0f);
+    boot.setOutlineColor(sf::Color(125, 211, 252, 160));
+    boot.setPosition(leftBootPos);
+    target.draw(boot);
+    boot.setPosition(rightBootPos);
+    target.draw(boot);
+
+    // 5. Render 2.5D SurveyorRig 3D Mesh via AssetManager (or fallback core)
+    const sf::Color rimCol = (m_activeStance == MovementStance::Sneak)
+        ? sf::Color(45, 212, 191)
+        : sf::Color(56, 189, 248);
+
+    if (assets != nullptr && assets->isInitialized()) {
+        const float pitchTilt = (m_activeStance == MovementStance::Sprint) ? 0.18f : 0.0f;
+        assets->renderMesh25D(
+            target,
+            ModelId::SurveyorRig,
+            m_position,
+            m_facingAngle,
+            15.5f,
+            sf::Color(18, 38, 62),
+            rimCol,
+            0.95f,
+            m_position + forward * 60.0f,
+            pitchTilt
+        );
+    } else {
+        sf::CircleShape body(cfg::kPlayerRadius);
+        body.setOrigin(cfg::kPlayerRadius, cfg::kPlayerRadius);
+        body.setPosition(m_position);
+        body.setFillColor(sf::Color(12, 20, 34));
+        body.setOutlineThickness(2.0f);
+        body.setOutlineColor(rimCol);
+        target.draw(body);
+    }
+
+    // 6. Articulated right-hand Acoustic Emitter Dish with recoil glow
+    const float recoilOffset = m_pingRecoilTimer * 14.0f;
+    const sf::Vector2f dishPos = m_position + right * 8.5f + forward * (10.5f - recoilOffset);
+    sf::CircleShape dish(3.8f + m_pingRecoilTimer * 4.0f);
+    dish.setOrigin(dish.getRadius(), dish.getRadius());
+    dish.setPosition(dishPos);
+    dish.setFillColor(m_pingRecoilTimer > 0.0f ? sf::Color(224, 242, 254) : sf::Color(125, 211, 252));
+    target.draw(dish);
 }
 
 } // namespace echo

@@ -91,6 +91,19 @@ void Labyrinth::resetAllProgress() {
     markRoomVisited(0);
 }
 
+void Labyrinth::updateAnimations(float dt) noexcept {
+    auto& room = m_rooms[m_currentRoomIndex];
+    for (auto& mech : room.mechanisms) {
+        const float target = mech.activated ? 1.0f : 0.0f;
+        mech.animProgress += (target - mech.animProgress) * std::min(1.0f, dt * 7.5f);
+    }
+    for (auto& prop : room.props) {
+        if (prop.type == PropType::VentTurbine) {
+            prop.rotationDeg = std::fmod(prop.rotationDeg + dt * 65.0f, 360.0f);
+        }
+    }
+}
+
 void Labyrinth::buildAllRooms() {
     m_rooms.clear();
     m_rooms.reserve(15);
@@ -103,6 +116,7 @@ void Labyrinth::buildAllRooms() {
         SurfaceMaterial secondaryMat;
         int archetype; // 0..5
         bool hasEnemy;
+        EnemyVariant variant;
         bool isCheckpoint;
         const char* loreTitle;
         const char* loreBody;
@@ -113,7 +127,7 @@ void Labyrinth::buildAllRooms() {
             "01. ENTRY CISTERN",
             "UPPER DRAINAGE",
             "CLICK [LMB] FOR SONAR PING OR [SPACE] FOR 360 PULSE. REACH THE EAST CONDUIT.",
-            SurfaceMaterial::Stone, SurfaceMaterial::Water, 0, false, true,
+            SurfaceMaterial::Stone, SurfaceMaterial::Water, 0, false, EnemyVariant::Stalker, true,
             "LOG 01 - CALIBRATION",
             "OPTICAL LAMPS FAIL IN THIS VAPOR. USE DIRECTIONAL ACOUSTIC PINGS TO MAP MASONRY."
         },
@@ -121,14 +135,14 @@ void Labyrinth::buildAllRooms() {
             "02. ECHOING GALLERY",
             "UPPER DRAINAGE",
             "ENERGIZE THE TUNING CRYSTAL WITH SONAR RAYS [LMB / SPACE] TO UNSEAL THE EAST GATE.",
-            SurfaceMaterial::Stone, SurfaceMaterial::Metal, 1, false, false,
+            SurfaceMaterial::Stone, SurfaceMaterial::Metal, 1, false, EnemyVariant::Stalker, false,
             nullptr, nullptr
         },
         {
             "03. FLOODED SLUICE",
             "AQUEDUCT SECTOR",
             "ENGAGE THE HARMONIC LEVER [F] TO UNSEAL THE EAST RESONANCE GATE. AVOID THE LISTENER.",
-            SurfaceMaterial::Water, SurfaceMaterial::Stone, 2, true, false,
+            SurfaceMaterial::Water, SurfaceMaterial::Stone, 2, true, EnemyVariant::Stalker, false,
             "LOG 02 - THE LISTENERS",
             "THEY ARE BLIND BUT HUNT VIBRATIONS. HOLD [LSHIFT] TO SNEAK QUIETLY PAST PATROLS."
         },
@@ -136,14 +150,14 @@ void Labyrinth::buildAllRooms() {
             "04. IRON FOUNDRY",
             "INDUSTRIAL CORE",
             "SNEAK [LSHIFT] OVER BRITTLE SHALE ZONES SO THEY DO NOT CRACK AND ALERT THE HUNTER.",
-            SurfaceMaterial::Metal, SurfaceMaterial::Concrete, 3, true, false,
+            SurfaceMaterial::Metal, SurfaceMaterial::Concrete, 3, true, EnemyVariant::Stalker, false,
             nullptr, nullptr
         },
         {
             "05. WHISPERING OSSUARY",
             "CATACOMB TIER",
             "DAMP MOSS ABSORBS ECHOES QUICKLY. CHECKPOINT ACTIVE - PRESS [F5] TO SAVE.",
-            SurfaceMaterial::DampMoss, SurfaceMaterial::Stone, 4, false, true,
+            SurfaceMaterial::DampMoss, SurfaceMaterial::Stone, 4, false, EnemyVariant::Stalker, true,
             "LOG 03 - MOSS DAMPENING",
             "OVERGROWN MOSS ABSORBS 64 PERCENT OF WAVE ENERGY, HIDING WALLS BUT MUFFLING STEPS."
         },
@@ -151,29 +165,29 @@ void Labyrinth::buildAllRooms() {
             "06. COLLAPSED VAULT",
             "CATACOMB TIER",
             "THROW A DECOY STONE [RMB / G] TO LURE THE GUARDIAN AWAY FROM THE HARMONIC LEVER [F].",
-            SurfaceMaterial::Stone, SurfaceMaterial::DampMoss, 2, true, false,
+            SurfaceMaterial::Stone, SurfaceMaterial::DampMoss, 2, true, EnemyVariant::Stalker, false,
             nullptr, nullptr
         },
         {
             "07. RESONANCE CHAMBER",
             "ACOUSTIC SANCTUM",
             "BOUNCE SONAR WAVES OFF THE 45-DEGREE STEEL MIRRORS TO CHARGE THE RESONATOR CRYSTAL.",
-            SurfaceMaterial::Metal, SurfaceMaterial::Stone, 1, false, false,
+            SurfaceMaterial::Metal, SurfaceMaterial::Stone, 1, false, EnemyVariant::Stalker, false,
             "LOG 04 - HARMONIC CRYSTALS",
             "CRYSTAL RESONATORS ABSORB COHERENT SONAR RAYS AND UNSEAL PAIRED HARMONIC BARRIERS."
         },
         {
             "08. WARDEN WATCHPOST",
             "SECURITY RING",
-            "NAVIGATE THE REINFORCED CONCRETE CHICANES AND SNEAK ACROSS LOOSE SHALE.",
-            SurfaceMaterial::Concrete, SurfaceMaterial::Metal, 3, true, false,
+            "EVADE THE ARMORED WARDEN JUGGERNAUT AND SNEAK ACROSS LOOSE SHALE.",
+            SurfaceMaterial::Concrete, SurfaceMaterial::Metal, 3, true, EnemyVariant::Warden, false,
             nullptr, nullptr
         },
         {
             "09. SUBTERRANEAN CANAL",
             "AQUEDUCT SECTOR",
             "UNLOCK THE CANAL GATE VIA THE NORTHERN LEVER [F]. CHECKPOINT REACHED.",
-            SurfaceMaterial::Water, SurfaceMaterial::Metal, 2, true, true,
+            SurfaceMaterial::Water, SurfaceMaterial::Metal, 2, true, EnemyVariant::Stalker, true,
             "LOG 05 - HYDRO ACOUSTICS",
             "STEAM VENTS MASK NEARBY FOOTSTEPS WHILE PULSING. USE DECOY STONES WHEN CORNERED."
         },
@@ -181,44 +195,44 @@ void Labyrinth::buildAllRooms() {
             "10. RITUAL ATRIUM",
             "DEEP VAULTS",
             "SLIP PAST THE MONOLITH RING WHILE THE LISTENER CIRCLES THE CENTRAL SANCTUM.",
-            SurfaceMaterial::Stone, SurfaceMaterial::Concrete, 4, true, false,
+            SurfaceMaterial::Stone, SurfaceMaterial::Concrete, 4, true, EnemyVariant::Stalker, false,
             nullptr, nullptr
         },
         {
             "11. RUST CORRIDOR",
             "INDUSTRIAL CORE",
             "NARROW IRON BULKHEADS TRANSMIT 72% OF SOUND THROUGH WALLS. DO NOT SPRINT.",
-            SurfaceMaterial::Metal, SurfaceMaterial::DampMoss, 3, true, false,
+            SurfaceMaterial::Metal, SurfaceMaterial::DampMoss, 3, true, EnemyVariant::Stalker, false,
             "LOG 06 - IRON RESONANCE",
             "FORGED STEEL BULKHEADS TRANSMIT VIBRATIONS EVEN THROUGH SOLID PARTITIONS."
         },
         {
             "12. GENERATOR HALL",
             "INDUSTRIAL CORE",
-            "ACTIVATE THE TURBINE BYPASS LEVER [F] TO OPEN THE EAST BULKHEAD. CHECKPOINT ACTIVE.",
-            SurfaceMaterial::Concrete, SurfaceMaterial::Metal, 2, true, true,
+            "EVADE THE HEAVY WARDEN AND ACTIVATE THE TURBINE BYPASS LEVER [F]. CHECKPOINT ACTIVE.",
+            SurfaceMaterial::Concrete, SurfaceMaterial::Metal, 2, true, EnemyVariant::Warden, true,
             nullptr, nullptr
         },
         {
             "13. SILENT ARCHIVE",
             "DEEP VAULTS",
             "MOSS-COVERED ARCHIVE STACKS DEADEN SONAR. ADVANCE CAREFULLY BETWEEN AISLES.",
-            SurfaceMaterial::DampMoss, SurfaceMaterial::Stone, 0, true, false,
+            SurfaceMaterial::DampMoss, SurfaceMaterial::Stone, 0, true, EnemyVariant::Stalker, false,
             "LOG 07 - FINAL SHAFT",
             "ONLY THE WARDEN SANCTUM STANDS BETWEEN US AND THE SURFACE ASCENT LIFT."
         },
         {
             "14. WARDEN SANCTUM",
             "ABYSSAL THRESHOLD",
-            "LURE THE SANCTUM GUARDIAN AWAY AND PULL THE CONDUIT LEVER [F] TO UNSEAL THE LIFT.",
-            SurfaceMaterial::Stone, SurfaceMaterial::Metal, 2, true, false,
+            "LURE THE SANCTUM WARDEN AWAY AND PULL THE CONDUIT LEVER [F] TO UNSEAL THE LIFT.",
+            SurfaceMaterial::Stone, SurfaceMaterial::Metal, 2, true, EnemyVariant::Warden, false,
             nullptr, nullptr
         },
         {
             "15. ASCENT GATE",
             "SURFACE CONDUIT",
             "ENGAGE THE FINAL LIFT LOCK [F] AND STEP INTO THE EASTERN SURFACE LIFT TO ESCAPE.",
-            SurfaceMaterial::Metal, SurfaceMaterial::Stone, 5, false, true,
+            SurfaceMaterial::Metal, SurfaceMaterial::Stone, 5, false, EnemyVariant::Stalker, true,
             "LOG 08 - EMERGENCE",
             "THE SURFACE SHAFT IS OPEN. STEP THROUGH THE EASTERN PORTAL TO COMPLETE THE ASCENT."
         }
@@ -231,6 +245,8 @@ void Labyrinth::buildAllRooms() {
         room.name = bp.name;
         room.sectorTitle = bp.sector;
         room.objectiveText = bp.objective;
+        room.floorMaterial = bp.primaryMat;
+        room.enemyVariant = bp.variant;
         room.isCheckpoint = bp.isCheckpoint;
         room.isExitRoom = (i == 14);
         room.playerDefaultSpawn = {145.0f, 400.0f};
@@ -238,6 +254,17 @@ void Labyrinth::buildAllRooms() {
         const bool hasWest = (i > 0);
         const bool hasEast = true;
         addRoomPerimeterWithVestibules(room.walls, bp.primaryMat, hasWest, hasEast);
+
+        // Decorative subterranean complex infrastructure props (pipes, turbines, emergency beacons, puddles)
+        room.props.push_back({PropType::PipeConduit, {110.0f, 102.0f}, {1010.0f, 102.0f}, 1.0f, 0.0f});
+        room.props.push_back({PropType::PipeConduit, {110.0f, 698.0f}, {1010.0f, 698.0f}, 1.0f, 0.0f});
+        room.props.push_back({PropType::VentTurbine, {195.0f, 145.0f}, {0.0f, 0.0f}, 22.0f, static_cast<float>(i * 25)});
+        room.props.push_back({PropType::VentTurbine, {965.0f, 655.0f}, {0.0f, 0.0f}, 22.0f, static_cast<float>(i * 50)});
+        room.props.push_back({PropType::WaterPuddle, {235.0f, 540.0f}, {0.0f, 0.0f}, 36.0f, 0.0f});
+        room.props.push_back({PropType::WaterPuddle, {780.0f, 260.0f}, {0.0f, 0.0f}, 42.0f, 0.0f});
+        if (room.isCheckpoint) {
+            room.props.push_back({PropType::EmergencyBeacon, {145.0f, 345.0f}, {0.0f, 0.0f}, 1.0f, 0.0f});
+        }
 
         int reqSwitch = -1;
 
@@ -249,12 +276,10 @@ void Labyrinth::buildAllRooms() {
             addRectObstacle(room.walls, 845.0f, 475.0f, 100.0f, 165.0f, bp.secondaryMat);
             room.ambientEmitters.push_back({{625.0f, 225.0f}, 3.6f, 1.0f, true});
         } else if (bp.archetype == 1) {
-            // Acoustic Mirror Gallery + Resonator Crystal lock
             reqSwitch = 100 + i;
             addRectObstacle(room.walls, 330.0f, 230.0f, 95.0f, 340.0f, bp.primaryMat);
             addRectObstacle(room.walls, 670.0f, 140.0f, 110.0f, 185.0f, bp.secondaryMat);
             addRectObstacle(room.walls, 670.0f, 475.0f, 110.0f, 185.0f, bp.secondaryMat);
-            // Angled mirror plates
             room.walls.push_back({{490.0f, 140.0f}, {600.0f, 240.0f}, SurfaceMaterial::Metal, -1, false});
             room.walls.push_back({{490.0f, 660.0f}, {600.0f, 560.0f}, SurfaceMaterial::Metal, -1, false});
             room.walls.push_back({{870.0f, 230.0f}, {965.0f, 325.0f}, SurfaceMaterial::Metal, -1, false});
@@ -283,6 +308,7 @@ void Labyrinth::buildAllRooms() {
                 reqSwitch,
                 {615.0f, 185.0f},
                 false,
+                0.0f,
                 "HARMONIC CONDUIT LEVER",
                 reqSwitch
             });
@@ -304,7 +330,6 @@ void Labyrinth::buildAllRooms() {
             addRectObstacle(room.walls, 575.0f, 345.0f, 110.0f, 110.0f, SurfaceMaterial::Metal);
             room.ambientEmitters.push_back({{630.0f, 260.0f}, 3.2f, 0.2f, true});
         } else {
-            // Archetype 5: Room 15 Final Ascent Gate
             reqSwitch = 100 + i;
             addRectObstacle(room.walls, 320.0f, 150.0f, 120.0f, 180.0f, SurfaceMaterial::Metal);
             addRectObstacle(room.walls, 320.0f, 470.0f, 120.0f, 180.0f, SurfaceMaterial::Metal);
@@ -313,13 +338,13 @@ void Labyrinth::buildAllRooms() {
                 reqSwitch,
                 {680.0f, 400.0f},
                 false,
+                0.0f,
                 "ASCENT SHAFT INTERLOCK",
                 reqSwitch
             });
         }
 
         if (hasWest) {
-            // Notice: when returning West into room (i-1), spawn at x = 985.0f (inside the main chamber west of any 1045 bulkhead!)
             room.portals.push_back({
                 {70.0f, 400.0f},
                 28.0f,
@@ -531,7 +556,6 @@ bool Labyrinth::verifyRoomTraversability(int roomId, std::string& outError) cons
         return false;
     };
 
-    // 1. Check with gates CLOSED
     const auto closedGrid = runBfs(false);
     for (const auto& mech : room.mechanisms) {
         if (!isPointReachableWithin(closedGrid, mech.position, 48.0f)) {
@@ -547,7 +571,6 @@ bool Labyrinth::verifyRoomTraversability(int roomId, std::string& outError) cons
     }
     for (const auto& portal : room.portals) {
         if (portal.requiredSwitchId != -1) {
-            // Must NOT be reachable while gate is closed
             if (isPointReachableWithin(closedGrid, portal.position, portal.radius)) {
                 outError = "Locked portal can be bypassed without switch in " + room.name;
                 return false;
@@ -555,7 +578,6 @@ bool Labyrinth::verifyRoomTraversability(int roomId, std::string& outError) cons
         }
     }
 
-    // 2. Check with gates OPEN
     const auto openGrid = runBfs(true);
     for (const auto& portal : room.portals) {
         if (!isPointReachableWithin(openGrid, portal.position, portal.radius)) {

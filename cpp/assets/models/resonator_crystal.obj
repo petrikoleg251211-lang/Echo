@@ -1,0 +1,20 @@
+# EchoLabyrinth 3D Model: Harmonic Resonator Crystal Octahedron
+# License: CC0 1.0 Public Domain (Original Procedural Asset)
+v  0.00  0.00 0.05
+v  0.75  0.00 0.75
+v  0.00  0.75 0.75
+v -0.75  0.00 0.75
+v  0.00 -0.75 0.75
+v  0.00  0.00 1.55
+vn  0.58  0.58  0.58
+vn -0.58  0.58  0.58
+vn -0.58 -0.58  0.58
+vn  0.58 -0.58  0.58
+f 1//1 2//1 3//1
+f 1//2 3//2 4//2
+f 1//3 4//3 5//3
+f 1//4 5//4 2//4
+f 2//1 6//1 3//1
+f 3//2 6//2 4//2
+f 4//3 6//3 5//3
+f 5//4 6//4 2//4

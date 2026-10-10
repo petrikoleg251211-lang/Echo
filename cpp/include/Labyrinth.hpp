@@ -2,10 +2,31 @@
 
 #include "AcousticSystem.hpp"
 #include <SFML/System/Vector2.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace echo {
+
+enum class EnemyVariant : std::uint8_t {
+    Stalker = 0, // Agile arachnid acoustic hunter
+    Warden = 1   // Heavy armored juggernaut (wider tremor radius, deeper bass)
+};
+
+enum class PropType : std::uint8_t {
+    VentTurbine = 0,
+    PipeConduit = 1,
+    EmergencyBeacon = 2,
+    WaterPuddle = 3
+};
+
+struct DecoProp {
+    PropType type{PropType::VentTurbine};
+    sf::Vector2f position;
+    sf::Vector2f endPoint; // Used for PipeConduit segments
+    float scale{1.0f};
+    float rotationDeg{0.0f};
+};
 
 struct RoomPortal {
     sf::Vector2f position;
@@ -21,6 +42,7 @@ struct InteractiveMechanism {
     int id{0};
     sf::Vector2f position;
     bool activated{false};
+    float animProgress{0.0f}; // Smoothly interpolates [0.0 -> 1.0] when pulled
     std::string label;
     int unlocksDoorId{-1};
 };
@@ -37,7 +59,7 @@ struct AmbientEmitter {
     sf::Vector2f position;
     float intervalSec{3.2f};
     float timer{0.0f};
-    bool isSteamVent{false}; // If true, masks player noise nearby when pulsing
+    bool isSteamVent{false};
 };
 
 struct AcousticHazardZone {
@@ -51,6 +73,8 @@ struct RoomDefinition {
     std::string name;
     std::string sectorTitle;
     std::string objectiveText;
+    SurfaceMaterial floorMaterial{SurfaceMaterial::Stone};
+    EnemyVariant enemyVariant{EnemyVariant::Stalker};
     sf::Vector2f playerDefaultSpawn{145.0f, 400.0f};
     std::vector<WallSegment> walls;
     std::vector<RoomPortal> portals;
@@ -59,6 +83,7 @@ struct RoomDefinition {
     std::vector<AcousticHazardZone> hazards;
     std::vector<LoreCollectible> collectibles;
     std::vector<AmbientEmitter> ambientEmitters;
+    std::vector<DecoProp> props;
     std::vector<sf::Vector2f> enemyPatrolNodes;
     bool isCheckpoint{false};
     bool isExitRoom{false};
@@ -70,6 +95,7 @@ public:
 
     void buildAllRooms();
     void resetAllProgress();
+    void updateAnimations(float dt) noexcept;
 
     const RoomDefinition& currentRoom() const noexcept { return m_rooms[m_currentRoomIndex]; }
     RoomDefinition& currentRoomMut() noexcept { return m_rooms[m_currentRoomIndex]; }
@@ -94,9 +120,6 @@ public:
         const std::vector<int>& visitedRooms
     );
 
-    // Mathematically verifies via 2D BFS grid pathfinding (with player collision radius)
-    // that all levers, lore logs, and portals in roomId are physically reachable and
-    // locked gates cannot be bypassed when closed.
     bool verifyRoomTraversability(int roomId, std::string& outError) const;
 
     const std::vector<int>& activatedSwitches() const noexcept { return m_activatedSwitches; }

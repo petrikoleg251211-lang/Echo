@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AcousticSystem.hpp"
+#include "AssetManager.hpp"
 #include "AudioManager.hpp"
 #include "Config.hpp"
 #include "EnemyAI.hpp"
@@ -37,7 +38,7 @@ public:
 
     int run();
 
-    // Runs deterministic headless verification of all core C++ gameplay systems
+    // Runs deterministic headless verification of all core C++ gameplay systems & 3D assets
     static int runSelfTest(const std::string& exeDir = "");
 
 private:
@@ -52,6 +53,7 @@ private:
 
     void render();
     void renderWorld();
+    void renderSubterraneanProps();
     void renderInteractiveObjects();
     void renderVignetteAndDust();
     void renderHud();
@@ -76,6 +78,7 @@ private:
     sf::RenderWindow m_window;
     sf::View m_worldView;
 
+    AssetManager m_assets;
     AcousticSystem m_acoustics;
     AudioManager m_audio;
     UiRenderer m_ui;

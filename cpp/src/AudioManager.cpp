@@ -1,7 +1,9 @@
 #include "AudioManager.hpp"
+#include <SFML/Audio/Listener.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace echo {
 
@@ -9,7 +11,6 @@ namespace {
 constexpr unsigned int kSampleRate = 44100;
 constexpr float kTwoPi = 6.28318530717958647692f;
 
-// Deterministic pseudo-random noise for footsteps & mechanical impacts
 float hashNoise(std::uint32_t seed) noexcept {
     seed = (seed ^ 61u) ^ (seed >> 16u);
     seed *= 9u;
@@ -20,10 +21,7 @@ float hashNoise(std::uint32_t seed) noexcept {
 }
 
 template <typename SampleFn>
-sf::SoundBuffer makeBuffer(
-    float durationSec,
-    SampleFn&& sampleFn
-) {
+sf::SoundBuffer makeBuffer(float durationSec, SampleFn&& sampleFn) {
     const std::size_t count = static_cast<std::size_t>(kSampleRate * durationSec);
     std::vector<sf::Int16> pcm(count, 0);
     for (std::size_t i = 0; i < count; ++i) {
@@ -43,22 +41,55 @@ AudioManager::~AudioManager() {
     stopAmbientDrone();
 }
 
+float AudioManager::nextPitchVariation(float spread) noexcept {
+    m_rngState ^= m_rngState << 13u;
+    m_rngState ^= m_rngState >> 17u;
+    m_rngState ^= m_rngState << 5u;
+    const float norm = (static_cast<float>(m_rngState & 0xFFFFu) / 32768.0f) - 1.0f;
+    return 1.0f + norm * spread;
+}
+
 void AudioManager::initialize() {
     if (m_initialized) return;
     buildProceduralBuffers();
-    m_ambientSound.setBuffer(m_ambientBuffer);
-    m_ambientSound.setLoop(true);
-    m_ambientSound.setVolume(m_muted ? 0.0f : m_masterVolume * 0.28f);
+
+    sf::Listener::setGlobalVolume(100.0f);
+    sf::Listener::setUpVector(0.0f, 1.0f, 0.0f);
+    updateListener({640.0f, 400.0f}, 0.0f);
+
+    m_loopExplore.setBuffer(m_bufExploreDrone);
+    m_loopExplore.setLoop(true);
+    m_loopExplore.setRelativeToListener(true);
+
+    m_loopTension.setBuffer(m_bufTensionLayer);
+    m_loopTension.setLoop(true);
+    m_loopTension.setRelativeToListener(true);
+
+    m_loopPursuit.setBuffer(m_bufPursuitPulse);
+    m_loopPursuit.setLoop(true);
+    m_loopPursuit.setRelativeToListener(true);
+
+    m_loopSanctum.setBuffer(m_bufSanctumTheme);
+    m_loopSanctum.setLoop(true);
+    m_loopSanctum.setRelativeToListener(true);
+
     m_initialized = true;
+    syncLoopLayerVolumes();
+}
+
+void AudioManager::updateListener(sf::Vector2f playerPos, float facingAngleRad) noexcept {
+    m_listenerPos = playerPos;
+    sf::Listener::setPosition(playerPos.x, 0.0f, playerPos.y);
+    sf::Listener::setDirection(std::cos(facingAngleRad), 0.0f, std::sin(facingAngleRad));
 }
 
 void AudioManager::buildProceduralBuffers() {
-    // 0. Directional Sonar Ping: crystalline harmonic sweep
+    // 0. SonarPing
     m_buffers[static_cast<std::size_t>(SoundEffectId::SonarPing)] = makeBuffer(
         0.48f,
         [](float t, std::uint32_t) {
             const float env = std::exp(-t * 6.8f);
-            const float f = 580.0f - t * 240.0f;
+            const float f = 590.0f - t * 240.0f;
             const float s = std::sin(kTwoPi * f * t)
                           + 0.35f * std::sin(kTwoPi * (f * 1.5f) * t)
                           + 0.15f * std::sin(kTwoPi * (f * 2.0f) * t);
@@ -66,7 +97,7 @@ void AudioManager::buildProceduralBuffers() {
         }
     );
 
-    // 1. Radial 360 Pulse: deep resonant subterranean gong + high shimmer
+    // 1. RadialPulse
     m_buffers[static_cast<std::size_t>(SoundEffectId::RadialPulse)] = makeBuffer(
         0.85f,
         [](float t, std::uint32_t) {
@@ -78,29 +109,73 @@ void AudioManager::buildProceduralBuffers() {
         }
     );
 
-    // 2. Footstep Sneak: soft low-frequency muffled brush
+    // 2. FootstepSneak
     m_buffers[static_cast<std::size_t>(SoundEffectId::FootstepSneak)] = makeBuffer(
         0.11f,
         [](float t, std::uint32_t idx) {
             const float env = std::exp(-t * 32.0f);
-            const float thump = std::sin(kTwoPi * 75.0f * t);
-            const float grit = hashNoise(idx) * 0.25f;
+            const float thump = std::sin(kTwoPi * 72.0f * t);
+            const float grit = hashNoise(idx) * 0.22f;
             return (thump * 0.7f + grit) * env * 0.28f;
         }
     );
 
-    // 3. Footstep Walk: distinct stone heel tap
-    m_buffers[static_cast<std::size_t>(SoundEffectId::FootstepWalk)] = makeBuffer(
+    // 3. FootstepStone (crisp slate heel tap)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::FootstepStone)] = makeBuffer(
         0.15f,
         [](float t, std::uint32_t idx) {
-            const float env = std::exp(-t * 24.0f);
-            const float thump = std::sin(kTwoPi * (125.0f - t * 300.0f) * t);
-            const float grit = hashNoise(idx + 1024u) * 0.4f;
-            return (thump * 0.75f + grit) * env * 0.48f;
+            const float env = std::exp(-t * 25.0f);
+            const float thump = std::sin(kTwoPi * (135.0f - t * 320.0f) * t);
+            const float grit = hashNoise(idx + 1024u) * 0.38f;
+            return (thump * 0.75f + grit) * env * 0.50f;
         }
     );
 
-    // 4. Footstep Sprint: sharp metallic/stone impact
+    // 4. FootstepConcrete (gritty dry thud)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::FootstepConcrete)] = makeBuffer(
+        0.16f,
+        [](float t, std::uint32_t idx) {
+            const float env = std::exp(-t * 22.0f);
+            const float body = std::sin(kTwoPi * (105.0f - t * 240.0f) * t);
+            const float scrape = hashNoise(idx + 2048u) * 0.52f * std::exp(-t * 28.0f);
+            return (body * 0.65f + scrape) * env * 0.52f;
+        }
+    );
+
+    // 5. FootstepMetal (hollow steel clang + high ring)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::FootstepMetal)] = makeBuffer(
+        0.22f,
+        [](float t, std::uint32_t idx) {
+            const float env = std::exp(-t * 16.0f);
+            const float clang = std::sin(kTwoPi * 310.0f * t) + 0.6f * std::sin(kTwoPi * 745.0f * t);
+            const float transient = hashNoise(idx + 3072u) * std::exp(-t * 40.0f) * 0.45f;
+            return (clang * 0.45f + transient) * env * 0.60f;
+        }
+    );
+
+    // 6. FootstepWater (filtered splash & ripple)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::FootstepWater)] = makeBuffer(
+        0.26f,
+        [](float t, std::uint32_t idx) {
+            const float env = std::sin(std::min(1.0f, t * 22.0f) * 1.570796f) * std::exp(-t * 11.5f);
+            const float bubble = std::sin(kTwoPi * (280.0f + std::sin(t * 95.0f) * 120.0f) * t);
+            const float splash = hashNoise(idx + 5120u) * 0.65f;
+            return (bubble * 0.45f + splash * 0.55f) * env * 0.55f;
+        }
+    );
+
+    // 7. FootstepMoss (soft organic brush)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::FootstepMoss)] = makeBuffer(
+        0.14f,
+        [](float t, std::uint32_t idx) {
+            const float env = std::exp(-t * 20.0f);
+            const float low = std::sin(kTwoPi * 68.0f * t);
+            const float rustle = hashNoise(idx + 6144u) * 0.35f;
+            return (low * 0.6f + rustle * 0.4f) * env * 0.36f;
+        }
+    );
+
+    // 8. FootstepSprint
     m_buffers[static_cast<std::size_t>(SoundEffectId::FootstepSprint)] = makeBuffer(
         0.20f,
         [](float t, std::uint32_t idx) {
@@ -112,7 +187,18 @@ void AudioManager::buildProceduralBuffers() {
         }
     );
 
-    // 5. Decoy Stone Impact: sharp double clack with metallic ring
+    // 9. PlayerBreath (exhausted respirator inhale/exhale)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::PlayerBreath)] = makeBuffer(
+        0.55f,
+        [](float t, std::uint32_t idx) {
+            const float env = std::sin(std::min(1.0f, t / 0.55f) * 3.1415926f);
+            const float air = hashNoise(idx + 8192u) * 0.25f;
+            const float resonator = std::sin(kTwoPi * 195.0f * t) * 0.12f;
+            return (air + resonator) * env * 0.42f;
+        }
+    );
+
+    // 10. DecoyImpact
     m_buffers[static_cast<std::size_t>(SoundEffectId::DecoyImpact)] = makeBuffer(
         0.60f,
         [](float t, std::uint32_t idx) {
@@ -125,7 +211,7 @@ void AudioManager::buildProceduralBuffers() {
         }
     );
 
-    // 6. Switch Clunk: heavy mechanical latch + harmonic gate unlock chord
+    // 11. SwitchClunk
     m_buffers[static_cast<std::size_t>(SoundEffectId::SwitchClunk)] = makeBuffer(
         0.72f,
         [](float t, std::uint32_t idx) {
@@ -136,7 +222,43 @@ void AudioManager::buildProceduralBuffers() {
         }
     );
 
-    // 7. Lore Pickup: warm two-tone discovery chime
+    // 12. GateSlideOpen (heavy pneumatic bulkhead retraction)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::GateSlideOpen)] = makeBuffer(
+        0.92f,
+        [](float t, std::uint32_t idx) {
+            const float env = std::sin(std::min(1.0f, t / 0.92f) * 3.1415926f);
+            const float rumble = std::sin(kTwoPi * (68.0f + t * 22.0f) * t);
+            const float hiss = hashNoise(idx + 9000u) * std::exp(-t * 4.0f) * 0.35f;
+            const float lock = (t > 0.75f) ? std::sin(kTwoPi * 240.0f * (t - 0.75f)) * std::exp(-(t - 0.75f) * 18.0f) : 0.0f;
+            return (rumble * 0.55f + hiss + lock * 0.5f) * env * 0.78f;
+        }
+    );
+
+    // 13. ResonatorHum
+    m_buffers[static_cast<std::size_t>(SoundEffectId::ResonatorHum)] = makeBuffer(
+        0.88f,
+        [](float t, std::uint32_t) {
+            const float env = std::exp(-t * 3.2f);
+            const float c1 = std::sin(kTwoPi * 440.0f * t);
+            const float c2 = std::sin(kTwoPi * 660.0f * t);
+            const float c3 = std::sin(kTwoPi * 880.0f * t);
+            return (c1 * 0.5f + c2 * 0.35f + c3 * 0.25f) * env * 0.70f;
+        }
+    );
+
+    // 14. ShaleCrack
+    m_buffers[static_cast<std::size_t>(SoundEffectId::ShaleCrack)] = makeBuffer(
+        0.45f,
+        [](float t, std::uint32_t idx) {
+            const float snap1 = std::exp(-t * 28.0f) * (std::sin(kTwoPi * 520.0f * t) + hashNoise(idx) * 0.8f);
+            const float snap2 = (t > 0.06f)
+                ? std::exp(-(t - 0.06f) * 20.0f) * (std::sin(kTwoPi * 390.0f * (t - 0.06f)) + hashNoise(idx + 77u) * 0.6f)
+                : 0.0f;
+            return (snap1 * 0.6f + snap2 * 0.5f) * 0.80f;
+        }
+    );
+
+    // 15. LorePickup
     m_buffers[static_cast<std::size_t>(SoundEffectId::LorePickup)] = makeBuffer(
         0.55f,
         [](float t, std::uint32_t) {
@@ -146,7 +268,7 @@ void AudioManager::buildProceduralBuffers() {
         }
     );
 
-    // 8. Enemy Alert: tense dissonant metallic scrape
+    // 16. EnemyAlert
     m_buffers[static_cast<std::size_t>(SoundEffectId::EnemyAlert)] = makeBuffer(
         0.65f,
         [](float t, std::uint32_t) {
@@ -157,33 +279,40 @@ void AudioManager::buildProceduralBuffers() {
         }
     );
 
-    // 9. Enemy Tremor: sub-bass pulse
+    // 17. EnemyTremor
     m_buffers[static_cast<std::size_t>(SoundEffectId::EnemyTremor)] = makeBuffer(
         0.32f,
         [](float t, std::uint32_t) {
             const float env = std::exp(-t * 10.5f);
-            return std::sin(kTwoPi * (64.0f - t * 80.0f) * t) * env * 0.6f;
+            return std::sin(kTwoPi * (64.0f - t * 80.0f) * t) * env * 0.65f;
         }
     );
 
-    // 10. UI Move
-    m_buffers[static_cast<std::size_t>(SoundEffectId::UiMove)] = makeBuffer(
-        0.07f,
-        [](float t, std::uint32_t) {
-            return std::sin(kTwoPi * 420.0f * t) * std::exp(-t * 40.0f) * 0.35f;
+    // 18. EnemySearchClick (echolocation chitin click)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::EnemySearchClick)] = makeBuffer(
+        0.18f,
+        [](float t, std::uint32_t idx) {
+            const float click1 = std::exp(-t * 45.0f) * std::sin(kTwoPi * 1150.0f * t);
+            const float click2 = (t > 0.055f)
+                ? std::exp(-(t - 0.055f) * 45.0f) * std::sin(kTwoPi * 980.0f * (t - 0.055f))
+                : 0.0f;
+            return (click1 + click2 + hashNoise(idx) * 0.15f * std::exp(-t * 40.0f)) * 0.55f;
         }
     );
 
-    // 11. UI Select
-    m_buffers[static_cast<std::size_t>(SoundEffectId::UiSelect)] = makeBuffer(
-        0.16f,
-        [](float t, std::uint32_t) {
-            const float f = (t < 0.05f) ? 480.0f : 720.0f;
-            return std::sin(kTwoPi * f * t) * std::exp(-t * 16.0f) * 0.45f;
+    // 19. EnemyHuntRoar (predatory low-mid growl)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::EnemyHuntRoar)] = makeBuffer(
+        0.75f,
+        [](float t, std::uint32_t idx) {
+            const float env = std::exp(-t * 3.5f);
+            const float growl = std::sin(kTwoPi * (112.0f - t * 35.0f) * t)
+                              + 0.6f * std::sin(kTwoPi * (168.0f + std::sin(t * 45.0f) * 18.0f) * t);
+            const float rasp = hashNoise(idx + 3333u) * 0.35f;
+            return (growl * 0.5f + rasp) * env * 0.72f;
         }
     );
 
-    // 12. Player Caught: dramatic low impact
+    // 20. PlayerCaught
     m_buffers[static_cast<std::size_t>(SoundEffectId::PlayerCaught)] = makeBuffer(
         0.95f,
         [](float t, std::uint32_t idx) {
@@ -195,7 +324,76 @@ void AudioManager::buildProceduralBuffers() {
         }
     );
 
-    // 13. Victory Chord: resonant harmonic triad
+    // 21. DistantMetalClang (environmental ambience)
+    m_buffers[static_cast<std::size_t>(SoundEffectId::DistantMetalClang)] = makeBuffer(
+        1.10f,
+        [](float t, std::uint32_t) {
+            const float env = std::exp(-t * 3.4f);
+            const float m1 = std::sin(kTwoPi * 184.0f * t);
+            const float m2 = std::sin(kTwoPi * 297.0f * t) * std::exp(-t * 5.0f);
+            const float m3 = std::sin(kTwoPi * 512.0f * t) * std::exp(-t * 8.0f);
+            return (m1 * 0.5f + m2 * 0.35f + m3 * 0.2f) * env * 0.40f;
+        }
+    );
+
+    // 22. StructuralCreak
+    m_buffers[static_cast<std::size_t>(SoundEffectId::StructuralCreak)] = makeBuffer(
+        0.85f,
+        [](float t, std::uint32_t) {
+            const float env = std::sin(std::min(1.0f, t / 0.85f) * 3.1415926f);
+            const float f = 95.0f + std::sin(t * 14.0f) * 18.0f;
+            return (std::sin(kTwoPi * f * t) + 0.4f * std::sin(kTwoPi * (f * 2.05f) * t)) * env * 0.32f;
+        }
+    );
+
+    // 23. WaterDrip
+    m_buffers[static_cast<std::size_t>(SoundEffectId::WaterDrip)] = makeBuffer(
+        0.16f,
+        [](float t, std::uint32_t) {
+            const float env = std::exp(-t * 26.0f);
+            const float pitch = 680.0f + t * 1400.0f;
+            return std::sin(kTwoPi * pitch * t) * env * 0.42f;
+        }
+    );
+
+    // 24. SteamHiss
+    m_buffers[static_cast<std::size_t>(SoundEffectId::SteamHiss)] = makeBuffer(
+        0.52f,
+        [](float t, std::uint32_t idx) {
+            const float env = std::sin(std::min(1.0f, t / 0.52f) * 3.1415926f) * std::exp(-t * 3.5f);
+            return hashNoise(idx + 12345u) * env * 0.36f;
+        }
+    );
+
+    // 25. ElectricalBuzz
+    m_buffers[static_cast<std::size_t>(SoundEffectId::ElectricalBuzz)] = makeBuffer(
+        0.35f,
+        [](float t, std::uint32_t idx) {
+            const float env = std::exp(-t * 8.0f);
+            const float hum = std::sin(kTwoPi * 120.0f * t) + 0.5f * std::sin(kTwoPi * 240.0f * t);
+            const float spark = hashNoise(idx + 999u) * 0.35f;
+            return (hum * 0.4f + spark) * env * 0.32f;
+        }
+    );
+
+    // 26. UiMove
+    m_buffers[static_cast<std::size_t>(SoundEffectId::UiMove)] = makeBuffer(
+        0.07f,
+        [](float t, std::uint32_t) {
+            return std::sin(kTwoPi * 420.0f * t) * std::exp(-t * 40.0f) * 0.35f;
+        }
+    );
+
+    // 27. UiSelect
+    m_buffers[static_cast<std::size_t>(SoundEffectId::UiSelect)] = makeBuffer(
+        0.16f,
+        [](float t, std::uint32_t) {
+            const float f = (t < 0.05f) ? 480.0f : 720.0f;
+            return std::sin(kTwoPi * f * t) * std::exp(-t * 16.0f) * 0.45f;
+        }
+    );
+
+    // 28. VictoryChord
     m_buffers[static_cast<std::size_t>(SoundEffectId::VictoryChord)] = makeBuffer(
         1.40f,
         [](float t, std::uint32_t) {
@@ -208,15 +406,51 @@ void AudioManager::buildProceduralBuffers() {
         }
     );
 
-    // Seamless 4-second subterranean cavern drone (integer number of cycles for click-free loop)
-    m_ambientBuffer = makeBuffer(
+    // Adaptive Music Layer 1: Exploration Sub-Bass Cavern Drone (4.0s seamless loop)
+    m_bufExploreDrone = makeBuffer(
         4.0f,
         [](float t, std::uint32_t) {
             const float lfo = 0.75f + 0.25f * std::sin(kTwoPi * 0.25f * t);
-            const float drone1 = std::sin(kTwoPi * 55.0f * t);
-            const float drone2 = 0.5f * std::sin(kTwoPi * 82.5f * t);
+            const float d1 = std::sin(kTwoPi * 55.0f * t);
+            const float d2 = 0.5f * std::sin(kTwoPi * 82.5f * t);
             const float airy = 0.2f * std::sin(kTwoPi * 110.0f * t + std::sin(kTwoPi * 0.5f * t));
-            return (drone1 + drone2 + airy) * 0.22f * lfo;
+            return (d1 + d2 + airy) * 0.22f * lfo;
+        }
+    );
+
+    // Adaptive Music Layer 2: Suspicion Tension Harmonic Pad (4.0s seamless loop)
+    m_bufTensionLayer = makeBuffer(
+        4.0f,
+        [](float t, std::uint32_t) {
+            const float pulse = 0.6f + 0.4f * std::sin(kTwoPi * 0.5f * t);
+            const float minor2nd = std::sin(kTwoPi * 116.5f * t) + 0.7f * std::sin(kTwoPi * 123.5f * t);
+            const float high = 0.25f * std::sin(kTwoPi * 233.0f * t);
+            return (minor2nd * 0.45f + high) * 0.25f * pulse;
+        }
+    );
+
+    // Adaptive Music Layer 3: Pursuit Industrial Percussion Loop (2.0s seamless loop, 120 BPM)
+    m_bufPursuitPulse = makeBuffer(
+        2.0f,
+        [](float t, std::uint32_t idx) {
+            const float beatTime = std::fmod(t, 0.5f);
+            const float kickEnv = std::exp(-beatTime * 16.0f);
+            const float kick = std::sin(kTwoPi * (110.0f - beatTime * 140.0f) * beatTime) * kickEnv;
+            const float subTime = std::fmod(t, 0.25f);
+            const float metallic = hashNoise(idx) * std::exp(-subTime * 28.0f) * 0.22f;
+            return (kick * 0.65f + metallic) * 0.38f;
+        }
+    );
+
+    // Adaptive Music Layer 4: Sanctum / Checkpoint Ethereal Motif (4.0s seamless loop)
+    m_bufSanctumTheme = makeBuffer(
+        4.0f,
+        [](float t, std::uint32_t) {
+            const float swell = 0.65f + 0.35f * std::sin(kTwoPi * 0.25f * t);
+            const float f1 = std::sin(kTwoPi * 220.0f * t);
+            const float f2 = std::sin(kTwoPi * 330.0f * t) * 0.55f;
+            const float f3 = std::sin(kTwoPi * 440.0f * t) * 0.30f;
+            return (f1 + f2 + f3) * 0.16f * swell;
         }
     );
 }
@@ -228,89 +462,230 @@ void AudioManager::playEffect(SoundEffectId id, float volumeScale, float pitch) 
 
     voice.stop();
     voice.setBuffer(m_buffers[static_cast<std::size_t>(id)]);
+    voice.setRelativeToListener(true);
+    voice.setPosition(0.0f, 0.0f, 0.0f);
     voice.setPitch(pitch);
-    voice.setVolume(std::clamp(m_masterVolume * volumeScale, 0.0f, 100.0f));
+    const float gain = (m_masterVolume / 100.0f) * (m_sfxVolume / 100.0f) * volumeScale * 100.0f;
+    voice.setVolume(std::clamp(gain, 0.0f, 100.0f));
     voice.play();
+}
+
+void AudioManager::playSpatial(
+    SoundEffectId id,
+    sf::Vector2f sourcePos,
+    float occlusionFactor,
+    float volumeScale,
+    float basePitch
+) {
+    if (!m_initialized || m_muted) return;
+    sf::Sound& voice = m_voices[m_voiceCursor];
+    m_voiceCursor = (m_voiceCursor + 1) % m_voices.size();
+
+    const float dx = sourcePos.x - m_listenerPos.x;
+    const float dy = sourcePos.y - m_listenerPos.y;
+    const float dist = std::sqrt(dx * dx + dy * dy);
+    const float distAtten = std::clamp(1.0f - (dist / 920.0f), 0.08f, 1.0f);
+    const float occ = std::clamp(occlusionFactor, 0.10f, 1.0f);
+
+    voice.stop();
+    voice.setBuffer(m_buffers[static_cast<std::size_t>(id)]);
+    voice.setRelativeToListener(false);
+    voice.setPosition(sourcePos.x, 0.0f, sourcePos.y);
+    voice.setMinDistance(140.0f);
+    voice.setAttenuation(1.8f);
+    // Slightly lower pitch when heavily occluded by walls (low-pass perceptual cue)
+    const float occludedPitch = basePitch * (0.88f + 0.12f * occ) * nextPitchVariation(0.04f);
+    voice.setPitch(std::clamp(occludedPitch, 0.5f, 2.0f));
+
+    const float gain = (m_masterVolume / 100.0f) * (m_sfxVolume / 100.0f) * volumeScale * distAtten * occ * 100.0f;
+    voice.setVolume(std::clamp(gain, 0.0f, 100.0f));
+    voice.play();
+}
+
+void AudioManager::playMaterialFootstep(SurfaceMaterial mat, bool isSneak, bool isSprint, sf::Vector2f pos) {
+    if (isSneak) {
+        playSpatial(SoundEffectId::FootstepSneak, pos, 1.0f, 0.55f, nextPitchVariation(0.05f));
+        return;
+    }
+    if (isSprint) {
+        playSpatial(SoundEffectId::FootstepSprint, pos, 1.0f, 0.95f, nextPitchVariation(0.06f));
+        return;
+    }
+
+    SoundEffectId id = SoundEffectId::FootstepStone;
+    switch (mat) {
+        case SurfaceMaterial::Stone:         id = SoundEffectId::FootstepStone; break;
+        case SurfaceMaterial::Concrete:      id = SoundEffectId::FootstepConcrete; break;
+        case SurfaceMaterial::Metal:         id = SoundEffectId::FootstepMetal; break;
+        case SurfaceMaterial::Water:         id = SoundEffectId::FootstepWater; break;
+        case SurfaceMaterial::DampMoss:      id = SoundEffectId::FootstepMoss; break;
+        case SurfaceMaterial::ResonanceDoor: id = SoundEffectId::FootstepMetal; break;
+    }
+    playSpatial(id, pos, 1.0f, 0.78f, nextPitchVariation(0.06f));
 }
 
 void AudioManager::playWaveSignature(WaveSignature sig) {
     switch (sig) {
         case WaveSignature::FootstepSneak:
-            playEffect(SoundEffectId::FootstepSneak, 0.55f, 0.96f);
+            playEffect(SoundEffectId::FootstepSneak, 0.55f, nextPitchVariation(0.05f));
             break;
         case WaveSignature::FootstepWalk:
-            playEffect(SoundEffectId::FootstepWalk, 0.75f, 1.0f);
+            playEffect(SoundEffectId::FootstepStone, 0.75f, nextPitchVariation(0.05f));
             break;
         case WaveSignature::FootstepSprint:
-            playEffect(SoundEffectId::FootstepSprint, 0.95f, 1.04f);
+            playEffect(SoundEffectId::FootstepSprint, 0.95f, nextPitchVariation(0.05f));
             break;
         case WaveSignature::DirectionalPing:
-            playEffect(SoundEffectId::SonarPing, 0.85f, 1.0f);
+            playEffect(SoundEffectId::SonarPing, 0.85f, nextPitchVariation(0.02f));
             break;
         case WaveSignature::RadialPulse:
             playEffect(SoundEffectId::RadialPulse, 1.0f, 1.0f);
             break;
         case WaveSignature::DecoyImpact:
-            playEffect(SoundEffectId::DecoyImpact, 0.95f, 1.0f);
+            playEffect(SoundEffectId::DecoyImpact, 0.95f, nextPitchVariation(0.04f));
             break;
         case WaveSignature::MechanismClunk:
             playEffect(SoundEffectId::SwitchClunk, 0.95f, 1.0f);
+            playEffect(SoundEffectId::GateSlideOpen, 0.85f, 1.0f);
             break;
         case WaveSignature::EnemyTremor:
-            playEffect(SoundEffectId::EnemyTremor, 0.65f, 0.95f);
+            playEffect(SoundEffectId::EnemyTremor, 0.65f, nextPitchVariation(0.04f));
             break;
         case WaveSignature::AmbientDrip:
-            playEffect(SoundEffectId::SonarPing, 0.18f, 1.65f);
+            playEffect(SoundEffectId::WaterDrip, 0.35f, nextPitchVariation(0.08f));
             break;
         case WaveSignature::ShaleCrack:
-            playEffect(SoundEffectId::DecoyImpact, 0.90f, 0.78f);
+            playEffect(SoundEffectId::ShaleCrack, 0.92f, nextPitchVariation(0.05f));
             break;
         case WaveSignature::ResonatorHum:
-            playEffect(SoundEffectId::SwitchClunk, 1.0f, 1.25f);
+            playEffect(SoundEffectId::ResonatorHum, 0.95f, 1.0f);
+            playEffect(SoundEffectId::GateSlideOpen, 0.80f, 1.05f);
             break;
     }
+}
+
+void AudioManager::syncLoopLayerVolumes() noexcept {
+    if (!m_initialized) return;
+    if (m_muted) {
+        m_loopExplore.setVolume(0.0f);
+        m_loopTension.setVolume(0.0f);
+        m_loopPursuit.setVolume(0.0f);
+        m_loopSanctum.setVolume(0.0f);
+        return;
+    }
+
+    const float master = m_masterVolume / 100.0f;
+    const float music = m_musicVolume / 100.0f;
+    const float amb = m_ambientVolume / 100.0f;
+
+    m_loopExplore.setVolume(std::clamp(master * amb * 34.0f, 0.0f, 100.0f));
+    m_loopTension.setVolume(std::clamp(master * music * m_tensionBlend * 52.0f, 0.0f, 100.0f));
+    m_loopPursuit.setVolume(std::clamp(master * music * m_pursuitBlend * 68.0f, 0.0f, 100.0f));
+    m_loopSanctum.setVolume(std::clamp(master * music * m_sanctumBlend * 42.0f, 0.0f, 100.0f));
 }
 
 void AudioManager::setMasterVolume(float volume0to100) noexcept {
     m_masterVolume = std::clamp(volume0to100, 0.0f, 100.0f);
-    if (!m_muted && m_initialized) {
-        m_ambientSound.setVolume(m_masterVolume * 0.28f);
-    }
+    syncLoopLayerVolumes();
+}
+
+void AudioManager::setMusicVolume(float volume0to100) noexcept {
+    m_musicVolume = std::clamp(volume0to100, 0.0f, 100.0f);
+    syncLoopLayerVolumes();
+}
+
+void AudioManager::setSfxVolume(float volume0to100) noexcept {
+    m_sfxVolume = std::clamp(volume0to100, 0.0f, 100.0f);
+}
+
+void AudioManager::setAmbientVolume(float volume0to100) noexcept {
+    m_ambientVolume = std::clamp(volume0to100, 0.0f, 100.0f);
+    syncLoopLayerVolumes();
 }
 
 void AudioManager::setMuted(bool muted) noexcept {
     m_muted = muted;
-    if (!m_initialized) return;
-    if (m_muted) {
-        m_ambientSound.setVolume(0.0f);
-    } else {
-        m_ambientSound.setVolume(m_masterVolume * 0.28f);
-    }
+    syncLoopLayerVolumes();
 }
 
 void AudioManager::startAmbientDrone() {
     if (!m_initialized) initialize();
-    if (m_ambientSound.getStatus() != sf::Sound::Playing) {
-        m_ambientSound.play();
-    }
+    if (m_loopExplore.getStatus() != sf::Sound::Playing) m_loopExplore.play();
+    if (m_loopTension.getStatus() != sf::Sound::Playing) m_loopTension.play();
+    if (m_loopPursuit.getStatus() != sf::Sound::Playing) m_loopPursuit.play();
+    if (m_loopSanctum.getStatus() != sf::Sound::Playing) m_loopSanctum.play();
+    syncLoopLayerVolumes();
 }
 
 void AudioManager::stopAmbientDrone() {
-    if (m_initialized && m_ambientSound.getStatus() == sf::Sound::Playing) {
-        m_ambientSound.stop();
-    }
+    if (!m_initialized) return;
+    m_loopExplore.stop();
+    m_loopTension.stop();
+    m_loopPursuit.stop();
+    m_loopSanctum.stop();
 }
 
-void AudioManager::updateHeartbeat(float dangerLevel0to1, float dt) {
-    if (dangerLevel0to1 <= 0.15f) {
+void AudioManager::updateAdaptiveAudio(
+    float dt,
+    float dangerLevel0to1,
+    bool isPursuing,
+    bool isSanctumCheckpoint,
+    float playerStamina0to100
+) {
+    // 1. Smoothly crossfade 4 adaptive soundtrack layers
+    const float targetTension = std::clamp((dangerLevel0to1 - 0.12f) / 0.75f, 0.0f, 1.0f);
+    const float targetPursuit = isPursuing ? 1.0f : 0.0f;
+    const float targetSanctum = (isSanctumCheckpoint && !isPursuing && dangerLevel0to1 < 0.25f) ? 1.0f : 0.0f;
+
+    const float blendRate = std::min(1.0f, dt * 2.2f);
+    m_tensionBlend += (targetTension - m_tensionBlend) * blendRate;
+    m_pursuitBlend += (targetPursuit - m_pursuitBlend) * blendRate;
+    m_sanctumBlend += (targetSanctum - m_sanctumBlend) * blendRate;
+    syncLoopLayerVolumes();
+
+    // 2. Dynamic heartbeat pulse when danger is elevated
+    if (dangerLevel0to1 > 0.15f) {
+        m_heartbeatTimer += dt;
+        const float interval = std::clamp(1.05f - dangerLevel0to1 * 0.62f, 0.36f, 1.05f);
+        if (m_heartbeatTimer >= interval) {
+            m_heartbeatTimer = 0.0f;
+            playEffect(SoundEffectId::EnemyTremor, 0.30f + dangerLevel0to1 * 0.45f, 1.15f);
+        }
+    } else {
         m_heartbeatTimer = 0.0f;
-        return;
     }
-    m_heartbeatTimer += dt;
-    const float interval = std::clamp(1.05f - dangerLevel0to1 * 0.62f, 0.36f, 1.05f);
-    if (m_heartbeatTimer >= interval) {
-        m_heartbeatTimer = 0.0f;
-        playEffect(SoundEffectId::EnemyTremor, 0.35f + dangerLevel0to1 * 0.5f, 1.15f);
+
+    // 3. Player respirator breathing when stamina is low (< 38%)
+    if (playerStamina0to100 < 38.0f) {
+        m_breathTimer += dt;
+        if (m_breathTimer >= 1.45f) {
+            m_breathTimer = 0.0f;
+            const float intensity = std::clamp((38.0f - playerStamina0to100) / 38.0f, 0.2f, 0.85f);
+            playEffect(SoundEffectId::PlayerBreath, intensity, nextPitchVariation(0.04f));
+        }
+    } else {
+        m_breathTimer = 0.0f;
+    }
+
+    // 4. Random subterranean structural creaks & distant metal clangs
+    m_randomAmbienceTimer += dt;
+    if (m_randomAmbienceTimer >= 7.5f) {
+        m_randomAmbienceTimer = 0.0f;
+        const float r = nextPitchVariation(1.0f);
+        const sf::Vector2f offset{
+            std::cos(r * 3.14f) * 320.0f,
+            std::sin(r * 3.14f) * 240.0f
+        };
+        const SoundEffectId ambId = (r > 1.0f)
+            ? SoundEffectId::DistantMetalClang
+            : SoundEffectId::StructuralCreak;
+        playSpatial(
+            ambId,
+            m_listenerPos + offset,
+            0.65f,
+            (m_ambientVolume / 100.0f) * 0.45f,
+            nextPitchVariation(0.08f)
+        );
     }
 }
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(EchoLabyrinth_SFML VERSION 2.0.0 LANGUAGES CXX)
+project(EchoLabyrinth_SFML VERSION 3.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -27,6 +27,7 @@ endif()
 set(ECHO_SOURCES
     src/main.cpp
     src/Game.cpp
+    src/AssetManager.cpp
     src/AcousticSystem.cpp
     src/AudioManager.cpp
     src/UiRenderer.cpp
@@ -39,6 +40,7 @@ set(ECHO_SOURCES
 set(ECHO_HEADERS
     include/Config.hpp
     include/Game.hpp
+    include/AssetManager.hpp
     include/AcousticSystem.hpp
     include/AudioManager.hpp
     include/UiRenderer.hpp
@@ -64,6 +66,15 @@ if(MSVC)
 else()
     target_compile_options(EchoLabyrinth_SFML PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+# Copy assets/ directory next to the compiled executable so 3D .obj models & manifest are always available
+add_custom_command(
+    TARGET EchoLabyrinth_SFML POST_BUILD
+    COMMENT "Copying EchoLabyrinth 3D models & asset manifest to output directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets
+        $<TARGET_FILE_DIR:EchoLabyrinth_SFML>/assets
+)
 
 # On Windows, copy runtime DLLs (openal32.dll, sfml-*.dll) next to the compiled executable
 if(WIN32 AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AcousticSystem.hpp"
+#include "AssetManager.hpp"
 #include "Config.hpp"
 #include <SFML/Graphics/RenderTarget.hpp>
 #include <SFML/System/Vector2.hpp>
@@ -29,7 +30,7 @@ public:
 
     void reset(sf::Vector2f spawnPos) noexcept;
 
-    // Returns true if a footstep sound was emitted this frame (outSignature set)
+    // Returns true if a footstep or decoy impact sound was emitted this frame (outSignature set)
     bool update(
         float dt,
         sf::Vector2f moveInput,
@@ -44,7 +45,13 @@ public:
     bool triggerRadialPulse(AcousticSystem& acoustics);
     bool throwDecoy(sf::Vector2f targetPoint, const std::vector<WallSegment>& walls);
 
-    void render(sf::RenderTarget& target) const;
+    // Detects the dominant acoustic surface material at the player's current position
+    SurfaceMaterial detectFloorMaterial(
+        const std::vector<WallSegment>& walls,
+        SurfaceMaterial roomDefault
+    ) const noexcept;
+
+    void render(sf::RenderTarget& target, const AssetManager* assets = nullptr) const;
 
     sf::Vector2f position() const noexcept { return m_position; }
     float facingAngleRad() const noexcept { return m_facingAngle; }
@@ -68,6 +75,8 @@ private:
     float m_stamina{100.0f};
     float m_stepAccumulator{0.0f};
     float m_walkCyclePhase{0.0f};
+    float m_breathPhase{0.0f};
+    float m_pingRecoilTimer{0.0f};
     float m_cooldownPing{0.0f};
     float m_cooldownPulse{0.0f};
     float m_cooldownDecoy{0.0f};

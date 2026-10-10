@@ -56,6 +56,7 @@ int Game::run() {
     m_window.setFramerateLimit(120);
     updateLetterboxView(cfg::kDefaultWindowWidth, cfg::kDefaultWindowHeight);
 
+    m_assets.initialize(m_exeDir);
     m_ui.initialize(m_exeDir);
     m_audio.initialize();
     m_audio.startAmbientDrone();
@@ -153,13 +154,14 @@ void Game::rebuildMenuButtons() {
         m_menuButtons.push_back({"START NEW EXPEDITION", {640.0f, 440.0f}, {380.0f, 44.0f}, true});
         m_menuButtons.push_back({"RETURN TO MAIN MENU", {640.0f, 505.0f}, {380.0f, 44.0f}, true});
     } else if (m_state == AppState::Settings) {
-        m_menuButtons.push_back({"VOLUME DOWN [-]", {490.0f, 290.0f}, {240.0f, 40.0f}, true});
-        m_menuButtons.push_back({"VOLUME UP [+]", {790.0f, 290.0f}, {240.0f, 40.0f}, true});
-        m_menuButtons.push_back({"TOGGLE MUTE [M]", {640.0f, 350.0f}, {360.0f, 40.0f}, true});
-        m_menuButtons.push_back({"CYCLE RAY QUALITY", {640.0f, 410.0f}, {360.0f, 40.0f}, true});
-        m_menuButtons.push_back({"CYCLE AMBIENT DARKNESS", {640.0f, 470.0f}, {360.0f, 40.0f}, true});
-        m_menuButtons.push_back({"TOGGLE FULLSCREEN [F11]", {640.0f, 530.0f}, {360.0f, 40.0f}, true});
-        m_menuButtons.push_back({"BACK", {640.0f, 600.0f}, {280.0f, 42.0f}, true});
+        m_menuButtons.push_back({"MASTER VOL [-]", {490.0f, 265.0f}, {240.0f, 38.0f}, true});
+        m_menuButtons.push_back({"MASTER VOL [+]", {790.0f, 265.0f}, {240.0f, 38.0f}, true});
+        m_menuButtons.push_back({"CYCLE MUSIC / SFX / AMB MIX", {640.0f, 320.0f}, {380.0f, 38.0f}, true});
+        m_menuButtons.push_back({"TOGGLE MUTE [M]", {640.0f, 375.0f}, {380.0f, 38.0f}, true});
+        m_menuButtons.push_back({"CYCLE RAY QUALITY", {640.0f, 430.0f}, {380.0f, 38.0f}, true});
+        m_menuButtons.push_back({"CYCLE AMBIENT DARKNESS", {640.0f, 485.0f}, {380.0f, 38.0f}, true});
+        m_menuButtons.push_back({"TOGGLE FULLSCREEN [F11]", {640.0f, 540.0f}, {380.0f, 38.0f}, true});
+        m_menuButtons.push_back({"BACK", {640.0f, 605.0f}, {280.0f, 40.0f}, true});
     } else if (m_state == AppState::Controls) {
         m_menuButtons.push_back({"BACK", {640.0f, 640.0f}, {280.0f, 42.0f}, true});
     }
@@ -234,8 +236,22 @@ void Game::executeMenuSelection(std::size_t index) {
         } else if (index == 1) {
             m_audio.setMasterVolume(m_audio.masterVolume() + 10.0f);
         } else if (index == 2) {
-            m_audio.setMuted(!m_audio.isMuted());
+            if (m_audio.musicVolume() > 60.0f) {
+                m_audio.setMusicVolume(40.0f);
+                m_audio.setSfxVolume(100.0f);
+                m_audio.setAmbientVolume(85.0f);
+            } else if (m_audio.musicVolume() > 20.0f) {
+                m_audio.setMusicVolume(85.0f);
+                m_audio.setSfxVolume(75.0f);
+                m_audio.setAmbientVolume(95.0f);
+            } else {
+                m_audio.setMusicVolume(75.0f);
+                m_audio.setSfxVolume(85.0f);
+                m_audio.setAmbientVolume(80.0f);
+            }
         } else if (index == 3) {
+            m_audio.setMuted(!m_audio.isMuted());
+        } else if (index == 4) {
             const float cur = m_acoustics.rayDensityScale();
             if (cur < 0.9f) {
                 m_acoustics.setRayDensityScale(1.0f);
@@ -247,13 +263,13 @@ void Game::executeMenuSelection(std::size_t index) {
                 m_acoustics.setRayDensityScale(0.7f);
                 m_acoustics.setMaxReflections(2);
             }
-        } else if (index == 4) {
+        } else if (index == 5) {
             if (m_ambientVisibility < 0.01f) m_ambientVisibility = 0.03f;
             else if (m_ambientVisibility < 0.05f) m_ambientVisibility = 0.08f;
             else m_ambientVisibility = 0.0f;
-        } else if (index == 5) {
-            toggleFullscreen();
         } else if (index == 6) {
+            toggleFullscreen();
+        } else if (index == 7) {
             m_state = m_previousState;
             rebuildMenuButtons();
         }
@@ -281,7 +297,10 @@ void Game::enterRoom(int roomId, sf::Vector2f spawnPos) {
     m_labyrinth.setCurrentRoom(roomId);
     m_acoustics.clear();
     m_player.reset(spawnPos);
-    m_enemy.configurePatrol(m_labyrinth.currentRoom().enemyPatrolNodes);
+    m_enemy.configurePatrol(
+        m_labyrinth.currentRoom().enemyPatrolNodes,
+        m_labyrinth.currentRoom().enemyVariant
+    );
 
     // Emit subtle orientation pulse on room transition
     m_acoustics.emitPulse(spawnPos, 350.0f, 380.0f, 0.82f, 84, WaveSignature::RadialPulse, 0.0f, 6.2831853f, false);
@@ -337,7 +356,10 @@ bool Game::loadCheckpoint() {
     m_acoustics.clear();
     m_player.reset(spawn);
     m_player.setStamina(data.playerStamina);
-    m_enemy.configurePatrol(m_labyrinth.currentRoom().enemyPatrolNodes);
+    m_enemy.configurePatrol(
+        m_labyrinth.currentRoom().enemyPatrolNodes,
+        m_labyrinth.currentRoom().enemyVariant
+    );
     m_acoustics.emitPulse(spawn, 360.0f, 400.0f, 0.85f, 90, WaveSignature::RadialPulse, 0.0f, 6.2831853f, false);
 
     m_statusBannerText = "CHECKPOINT LOADED - " + m_labyrinth.currentRoom().name;
@@ -568,8 +590,12 @@ void Game::updatePlaying(float dt) {
     }
 
     auto& room = m_labyrinth.currentRoomMut();
+    m_labyrinth.updateAnimations(dt);
 
-    // Update ambient cistern water drips & steam vents
+    // Update OpenAL 3D listener position & orientation from player state
+    m_audio.updateListener(m_player.position(), m_player.facingAngleRad());
+
+    // Update ambient cistern water drips & steam vents with 3D spatial audio + wall occlusion
     for (auto& emitter : room.ambientEmitters) {
         emitter.timer += dt;
         if (emitter.timer >= emitter.intervalSec) {
@@ -585,13 +611,32 @@ void Game::updatePlaying(float dt) {
                 6.2831853f,
                 false
             );
+            const float occ = AcousticSystem::computeTransmissionFactor(emitter.position, m_player.position(), room.walls);
+            m_audio.playSpatial(
+                emitter.isSteamVent ? SoundEffectId::SteamHiss : SoundEffectId::WaterDrip,
+                emitter.position,
+                occ,
+                emitter.isSteamVent ? 0.42f : 0.36f
+            );
         }
     }
 
     const sf::Vector2f prevPos = m_player.position();
     WaveSignature emittedSig = WaveSignature::FootstepWalk;
     if (m_player.update(dt, moveInput, stance, m_mouseWorldPos, room.walls, m_acoustics, emittedSig)) {
-        m_audio.playWaveSignature(emittedSig);
+        if (emittedSig == WaveSignature::FootstepSneak ||
+            emittedSig == WaveSignature::FootstepWalk ||
+            emittedSig == WaveSignature::FootstepSprint) {
+            const SurfaceMaterial floorMat = m_player.detectFloorMaterial(room.walls, room.floorMaterial);
+            m_audio.playMaterialFootstep(
+                floorMat,
+                emittedSig == WaveSignature::FootstepSneak,
+                emittedSig == WaveSignature::FootstepSprint,
+                m_player.position()
+            );
+        } else {
+            m_audio.playWaveSignature(emittedSig);
+        }
     }
 
     // Check Brittle Shale hazard zones: walking/sprinting across them cracks the floor loudly!
@@ -630,12 +675,24 @@ void Game::updatePlaying(float dt) {
 
     const bool newlyAlerted = m_enemy.update(dt, m_player.position(), room.walls, m_acoustics);
     if (newlyAlerted) {
-        m_audio.playEffect(SoundEffectId::EnemyAlert);
+        const float occ = AcousticSystem::computeTransmissionFactor(m_enemy.position(), m_player.position(), room.walls);
+        m_audio.playSpatial(
+            m_enemy.state() == EnemyState::PursuePlayer ? SoundEffectId::EnemyHuntRoar : SoundEffectId::EnemyAlert,
+            m_enemy.position(),
+            occ,
+            0.95f
+        );
         m_cameraShakeTimer = 0.22f;
     }
 
     const float dangerRatio = m_enemy.isActive() ? (m_enemy.suspicion() / 100.0f) : 0.0f;
-    m_audio.updateHeartbeat(dangerRatio, dt);
+    m_audio.updateAdaptiveAudio(
+        dt,
+        dangerRatio,
+        m_enemy.isActive() && m_enemy.state() == EnemyState::PursuePlayer,
+        room.isCheckpoint || room.isExitRoom,
+        m_player.stamina()
+    );
 
     const auto newlyChargedResonators = m_acoustics.update(dt, room.walls, &room.resonators);
     for (int resId : newlyChargedResonators) {
@@ -724,19 +781,77 @@ void Game::renderWorld() {
     }
     m_window.draw(gridLines);
 
-    // 2. Render Acoustic Wavefronts & 3D Wall Echoes
+    // 2. Render Subterranean Infrastructure Props (Pipes, Water Puddles, Rotating 3D Turbines, Beacons)
+    renderSubterraneanProps();
+
+    // 3. Render Acoustic Wavefronts & 3D Wall Echoes
     m_acoustics.render(m_window, m_ambientVisibility, &room.walls);
 
-    // 3. Render Portals, Switches, Lore Terminals, Enemy, and Player
+    // 4. Render Portals, 2.5D Switches, Lore Terminals, 3D Resonator Crystals, Enemy, and Player
     if (m_state == AppState::Playing || m_state == AppState::Paused || m_state == AppState::GameOver) {
         renderInteractiveObjects();
         const float enemyIllum = m_acoustics.queryIlluminationAt(m_enemy.position(), m_player.position());
-        m_enemy.render(m_window, enemyIllum);
-        m_player.render(m_window);
+        m_enemy.render(m_window, enemyIllum, m_player.position(), &m_assets);
+        m_player.render(m_window, &m_assets);
     }
 
-    // 4. Render atmospheric dust motes & vignette darkness
+    // 5. Render atmospheric dust motes & vignette darkness
     renderVignetteAndDust();
+}
+
+void Game::renderSubterraneanProps() {
+    const auto& room = m_labyrinth.currentRoom();
+    const sf::Vector2f playerPos = m_player.position();
+
+    for (const auto& prop : room.props) {
+        if (prop.type == PropType::PipeConduit) {
+            const float illumA = std::max(0.18f, m_acoustics.queryIlluminationAt(prop.position, playerPos));
+            const float illumB = std::max(0.18f, m_acoustics.queryIlluminationAt(prop.endPoint, playerPos));
+            sf::VertexArray pipeLines(sf::Lines, 4);
+            pipeLines[0] = sf::Vertex(prop.position, sf::Color(38, 62, 85, static_cast<sf::Uint8>(illumA * 180.0f)));
+            pipeLines[1] = sf::Vertex(prop.endPoint, sf::Color(38, 62, 85, static_cast<sf::Uint8>(illumB * 180.0f)));
+            pipeLines[2] = sf::Vertex(prop.position + sf::Vector2f{0.0f, 3.0f}, sf::Color(71, 105, 135, static_cast<sf::Uint8>(illumA * 140.0f)));
+            pipeLines[3] = sf::Vertex(prop.endPoint + sf::Vector2f{0.0f, 3.0f}, sf::Color(71, 105, 135, static_cast<sf::Uint8>(illumB * 140.0f)));
+            m_window.draw(pipeLines);
+        } else if (prop.type == PropType::WaterPuddle) {
+            const float illum = m_acoustics.queryIlluminationAt(prop.position, playerPos);
+            if (illum <= 0.04f) continue;
+            sf::CircleShape puddle(prop.scale);
+            puddle.setOrigin(prop.scale, prop.scale);
+            puddle.setPosition(prop.position);
+            puddle.setScale(1.35f, 0.72f);
+            puddle.setFillColor(sf::Color(12, 42, 52, static_cast<sf::Uint8>(illum * 95.0f)));
+            puddle.setOutlineThickness(1.0f);
+            puddle.setOutlineColor(sf::Color(45, 212, 191, static_cast<sf::Uint8>(illum * 115.0f)));
+            m_window.draw(puddle);
+        } else if (prop.type == PropType::VentTurbine) {
+            const float illum = std::max(0.22f, m_acoustics.queryIlluminationAt(prop.position, playerPos));
+            m_assets.renderMesh25D(
+                m_window,
+                ModelId::VentTurbine,
+                prop.position,
+                prop.rotationDeg * 0.01745329f,
+                prop.scale,
+                sf::Color(22, 38, 54),
+                sf::Color(56, 189, 248),
+                illum,
+                playerPos
+            );
+        } else if (prop.type == PropType::EmergencyBeacon) {
+            const float pulse = 0.55f + 0.45f * std::sin(m_runTimeSec * 4.2f);
+            sf::CircleShape glow(22.0f);
+            glow.setOrigin(22.0f, 22.0f);
+            glow.setPosition(prop.position);
+            glow.setFillColor(sf::Color(52, 211, 153, static_cast<sf::Uint8>(pulse * 55.0f)));
+            m_window.draw(glow);
+
+            sf::CircleShape lamp(4.5f);
+            lamp.setOrigin(4.5f, 4.5f);
+            lamp.setPosition(prop.position);
+            lamp.setFillColor(sf::Color(110, 231, 183, static_cast<sf::Uint8>(pulse * 235.0f)));
+            m_window.draw(lamp);
+        }
+    }
 }
 
 void Game::renderInteractiveObjects() {
@@ -767,27 +882,40 @@ void Game::renderInteractiveObjects() {
         );
     }
 
-    // Harmonic Levers
+    // Harmonic Levers (2.5D Pedestal Mesh + Animated Lever Handle)
     for (const auto& mech : room.mechanisms) {
-        const float illum = std::max(0.30f, m_acoustics.queryIlluminationAt(mech.position, playerPos));
+        const float illum = std::max(0.34f, m_acoustics.queryIlluminationAt(mech.position, playerPos));
         const auto alpha = static_cast<sf::Uint8>(illum * 245.0f);
         const sf::Color col = mech.activated
             ? sf::Color(52, 211, 153, alpha)
             : sf::Color(167, 139, 250, alpha);
 
-        sf::CircleShape base(12.0f);
-        base.setOrigin(12.0f, 12.0f);
-        base.setPosition(mech.position);
-        base.setFillColor(sf::Color(18, 16, 34, alpha));
-        base.setOutlineThickness(2.0f);
-        base.setOutlineColor(col);
-        m_window.draw(base);
+        m_assets.renderMesh25D(
+            m_window,
+            ModelId::HarmonicLever,
+            mech.position,
+            0.0f,
+            15.0f,
+            sf::Color(24, 20, 44, alpha),
+            col,
+            illum,
+            playerPos,
+            (mech.animProgress - 0.5f) * 0.65f
+        );
+
+        // Articulated lever arm swinging with animProgress
+        const float armAngle = -0.75f + mech.animProgress * 1.50f;
+        const sf::Vector2f armTip = mech.position + sf::Vector2f{std::sin(armAngle) * 14.0f, -8.0f - std::cos(armAngle) * 8.0f};
+        sf::VertexArray arm(sf::Lines, 2);
+        arm[0] = sf::Vertex(mech.position + sf::Vector2f{0.0f, -4.0f}, col);
+        arm[1] = sf::Vertex(armTip, sf::Color(224, 242, 254, alpha));
+        m_window.draw(arm);
 
         if (distSq(playerPos, mech.position) <= 95.0f * 95.0f || mech.activated) {
             m_ui.drawText(
                 m_window,
                 mech.activated ? "LEVER ENGAGED" : "[F] PULL LEVER",
-                {mech.position.x, mech.position.y - 24.0f},
+                {mech.position.x, mech.position.y - 26.0f},
                 11.0f,
                 col,
                 TextAlign::Center
@@ -795,26 +923,29 @@ void Game::renderInteractiveObjects() {
         }
     }
 
-    // Lore Terminals
+    // Lore Terminals (2.5D Surveyor Console Mesh)
     for (const auto& lore : room.collectibles) {
         if (lore.collected) continue;
-        const float illum = std::max(0.32f, m_acoustics.queryIlluminationAt(lore.position, playerPos));
+        const float illum = std::max(0.35f, m_acoustics.queryIlluminationAt(lore.position, playerPos));
         const auto alpha = static_cast<sf::Uint8>(illum * 235.0f);
 
-        sf::RectangleShape icon({14.0f, 14.0f});
-        icon.setOrigin(7.0f, 7.0f);
-        icon.setPosition(lore.position);
-        icon.setRotation(45.0f);
-        icon.setFillColor(sf::Color(16, 36, 48, alpha));
-        icon.setOutlineThickness(1.8f);
-        icon.setOutlineColor(sf::Color(45, 212, 191, alpha));
-        m_window.draw(icon);
+        m_assets.renderMesh25D(
+            m_window,
+            ModelId::SurveyorTerminal,
+            lore.position,
+            0.45f,
+            14.0f,
+            sf::Color(16, 40, 52, alpha),
+            sf::Color(45, 212, 191, alpha),
+            illum,
+            playerPos
+        );
 
         if (distSq(playerPos, lore.position) <= 105.0f * 105.0f) {
             m_ui.drawText(
                 m_window,
                 "[F] SURVEYOR LOG",
-                {lore.position.x, lore.position.y - 22.0f},
+                {lore.position.x, lore.position.y - 24.0f},
                 11.0f,
                 sf::Color(94, 234, 212, alpha),
                 TextAlign::Center
@@ -822,9 +953,9 @@ void Game::renderInteractiveObjects() {
         }
     }
 
-    // Harmonic Resonator Crystals (charged by sonar rays)
+    // Harmonic Resonator Crystals (3D Rotating Octahedron Mesh charged by sonar rays)
     for (const auto& res : room.resonators) {
-        const float illum = std::max(0.36f, m_acoustics.queryIlluminationAt(res.position, playerPos));
+        const float illum = std::max(0.40f, m_acoustics.queryIlluminationAt(res.position, playerPos));
         const auto alpha = static_cast<sf::Uint8>(illum * 245.0f);
         const sf::Color col = res.activated
             ? sf::Color(52, 211, 153, alpha)
@@ -833,18 +964,23 @@ void Game::renderInteractiveObjects() {
         sf::CircleShape outer(res.radius);
         outer.setOrigin(res.radius, res.radius);
         outer.setPosition(res.position);
-        outer.setFillColor(sf::Color(12, 28, 42, static_cast<sf::Uint8>(illum * 140.0f)));
+        outer.setFillColor(sf::Color(12, 28, 42, static_cast<sf::Uint8>(illum * 120.0f)));
         outer.setOutlineThickness(2.0f);
         outer.setOutlineColor(col);
         m_window.draw(outer);
 
-        const float coreSize = 8.0f + res.energy * 6.0f;
-        sf::RectangleShape crystal({coreSize, coreSize});
-        crystal.setOrigin(coreSize * 0.5f, coreSize * 0.5f);
-        crystal.setPosition(res.position);
-        crystal.setRotation(45.0f + m_runTimeSec * 35.0f);
-        crystal.setFillColor(col);
-        m_window.draw(crystal);
+        m_assets.renderMesh25D(
+            m_window,
+            ModelId::ResonatorCrystal,
+            res.position,
+            m_runTimeSec * (1.2f + res.energy * 2.5f),
+            14.0f + res.energy * 4.0f,
+            sf::Color(18, 52, 72, alpha),
+            col,
+            illum,
+            playerPos,
+            0.22f
+        );
 
         char resLabel[64];
         if (res.activated) {
@@ -1101,17 +1237,18 @@ void Game::renderSettingsOverlay() {
     m_ui.drawPanel(m_window, {300.0f, 120.0f}, {680.0f, 540.0f}, sf::Color(8, 13, 21, 242), sf::Color(56, 189, 248), 2.0f);
     m_ui.drawText(m_window, "AUDIO & ACOUSTIC ENGINE SETTINGS", {640.0f, 155.0f}, 22.0f, sf::Color(56, 189, 248), TextAlign::Center, true);
 
-    char infoBuf[160];
+    char infoBuf[200];
     std::snprintf(
         infoBuf,
         sizeof(infoBuf),
-        "VOLUME: %d%% (%s)  |  BOUNCES: %d  |  DARKNESS: %d%%",
+        "MASTER: %d%% (%s) | MUSIC: %d%% | SFX: %d%% | BOUNCES: %d",
         static_cast<int>(m_audio.masterVolume()),
-        m_audio.isMuted() ? "MUTED" : "ACTIVE",
-        static_cast<int>(m_acoustics.maxReflections()),
-        static_cast<int>(m_ambientVisibility * 100.0f)
+        m_audio.isMuted() ? "MUTED" : "ON",
+        static_cast<int>(m_audio.musicVolume()),
+        static_cast<int>(m_audio.sfxVolume()),
+        static_cast<int>(m_acoustics.maxReflections())
     );
-    m_ui.drawText(m_window, infoBuf, {640.0f, 210.0f}, 13.0f, sf::Color(167, 139, 250), TextAlign::Center);
+    m_ui.drawText(m_window, infoBuf, {640.0f, 205.0f}, 12.0f, sf::Color(167, 139, 250), TextAlign::Center);
 
     for (std::size_t i = 0; i < m_menuButtons.size(); ++i) {
         const auto& btn = m_menuButtons[i];
@@ -1195,7 +1332,7 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [1/8]: All 15 chambers verified via 2D BFS grid pathfinding (levers, logs, and locked gate barriers).\n";
+    std::cout << "[SelfTest] PASS [1/9]: All 15 chambers verified via 2D BFS grid pathfinding (levers, logs, and locked gate barriers).\n";
 
     // 2. Verify full 15-room transition graph (forward 0->14->Victory and backward West return spawn positions)
     lab.resetAllProgress();
@@ -1255,7 +1392,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Did not reach Room 15 Victory Exit.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [2/8]: Full 15-room progression graph & bidirectional portals verified.\n";
+    std::cout << "[SelfTest] PASS [2/9]: Full 15-room progression graph & bidirectional portals verified.\n";
 
     // 3. Verify AcousticSystem ray propagation, specular reflections, and multi-wall material transmission
     AcousticSystem acoustics;
@@ -1286,7 +1423,7 @@ int Game::runSelfTest(const std::string& exeDir) {
                   << ", Moss=" << transMoss << ", DoubleStone=" << transDoubleStone << ").\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [3/8]: AcousticSystem reflections & multi-wall material attenuation verified.\n";
+    std::cout << "[SelfTest] PASS [3/9]: AcousticSystem reflections & multi-wall material attenuation verified.\n";
 
     // 4. Verify AcousticResonator crystal charging via sonar rays unlocks paired ResonanceDoor
     lab.resetAllProgress();
@@ -1312,7 +1449,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: AcousticResonator did not charge and unlock Gate 101.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [4/8]: AcousticResonator crystal energized by sonar rays and unsealed Gate 101.\n";
+    std::cout << "[SelfTest] PASS [4/9]: AcousticResonator crystal energized by sonar rays and unsealed Gate 101.\n";
 
     // 5. Verify Player movement, circle-segment collision clamping, and decoy stone wall clamping
     Player player;
@@ -1325,7 +1462,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Player clipped out of room perimeter.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [5/8]: Player movement, stamina, & circle-segment collision clamping verified.\n";
+    std::cout << "[SelfTest] PASS [5/9]: Player movement, stamina, & circle-segment collision clamping verified.\n";
 
     // 6. Verify EnemyAI full state machine transitions (Patrol -> Investigate -> Search -> Return -> Patrol, Pursue, Attack)
     lab.setCurrentRoom(2); // Room 03 has an active Listener patrol
@@ -1374,7 +1511,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: EnemyAI did not enter Attack state upon player contact.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [6/8]: EnemyAI 6-state hunting FSM (Patrol/Investigate/Search/Return/Pursue/Attack) verified.\n";
+    std::cout << "[SelfTest] PASS [6/9]: EnemyAI 6-state hunting FSM (Patrol/Investigate/Search/Return/Pursue/Attack) verified.\n";
 
     // 7. Verify SaveSystem V3 atomic write, FNV-1a checksum, and full state round-trip
     const std::string testSavePath = SaveSystem::resolveSaveFilePath(exeDir, "test_echolabyrinth_save.dat");
@@ -1418,7 +1555,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Labyrinth::restoreState did not apply loaded save state.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [7/8]: SaveSystem V3 atomic serialization, checksum, & state restoration verified.\n";
+    std::cout << "[SelfTest] PASS [7/9]: SaveSystem V3 atomic serialization, checksum, & state restoration verified.\n";
 
     // 8. Verify corrupted header and tampered checksum rejection
     {
@@ -1432,9 +1569,28 @@ int Game::runSelfTest(const std::string& exeDir) {
         return 1;
     }
     std::remove(testSavePath.c_str());
-    std::cout << "[SelfTest] PASS [8/8]: Tampered save checksum and corrupted files rejected gracefully.\n";
+    std::cout << "[SelfTest] PASS [8/9]: Tampered save checksum and corrupted files rejected gracefully.\n";
 
-    std::cout << "[SelfTest] ALL 8 NATIVE C++17 VERIFICATION SUITES PASSED SUCCESSFULLY.\n";
+    // 9. Verify AssetManager 3D Wavefront OBJ models and procedural material textures
+    AssetManager assets;
+    assets.initialize(exeDir, false);
+    if (!assets.isInitialized() || assets.loadedDiskModelCount() < 7 || assets.totalTriangleCount() < 60) {
+        std::cerr << "[SelfTest] FAIL: AssetManager expected 7 Wavefront .obj models from disk, got "
+                  << assets.loadedDiskModelCount() << " (" << assets.totalTriangleCount() << " tris).\n";
+        return 1;
+    }
+    for (int m = 0; m < 6; ++m) {
+        const auto& img = assets.getMaterialImage(static_cast<SurfaceMaterial>(m));
+        if (img.getSize().x != 64 || img.getSize().y != 64) {
+            std::cerr << "[SelfTest] FAIL: Material texture image " << m << " invalid dimensions.\n";
+            return 1;
+        }
+    }
+    std::cout << "[SelfTest] PASS [9/9]: AssetManager loaded " << assets.loadedDiskModelCount()
+              << "/7 Wavefront 3D .obj models (" << assets.totalTriangleCount()
+              << " triangles) and 6 RGBA material textures.\n";
+
+    std::cout << "[SelfTest] ALL 9 NATIVE C++17 VERIFICATION SUITES PASSED SUCCESSFULLY.\n";
     return 0;
 }
 

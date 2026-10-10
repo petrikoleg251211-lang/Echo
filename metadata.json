@@ -1,0 +1,6 @@
+{
+  "name": "EchoLabyrinth SFML",
+  "description": "2D atmospheric acoustic horror labyrinth built with C++17 & SFML architecture, featuring ray-reflected sound wave propagation, material acoustics, and sound-hunting AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

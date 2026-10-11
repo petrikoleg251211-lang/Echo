@@ -9,11 +9,11 @@ namespace echo {
 
 enum class SurfaceMaterial : std::uint8_t {
     Stone = 0,         // Cold slate-blue stone masonry (82% reflectivity, 42% transmission)
-    Concrete = 1,      // Industrial reinforced concrete (74% reflectivity, 50% transmission)
-    Metal = 2,         // Forged iron & steel bulkheads (94% reflectivity, 72% transmission)
-    Water = 3,         // Subterranean flooded canal (64% reflectivity, 60% transmission)
-    DampMoss = 4,      // Overgrown acoustic-damping moss (36% reflectivity, 30% transmission)
-    ResonanceDoor = 5  // Harmonic lock barrier (90% reflectivity, 45% transmission)
+    Concrete = 1,      // Dense structural concrete (74% reflectivity, 50% transmission)
+    Metal = 2,         // High-resonance steel plating (94% reflectivity, 72% transmission)
+    Water = 3,         // Subterranean flooded basin (64% reflectivity, 60% transmission)
+    DampMoss = 4,      // Sound-absorbing organic moss (36% reflectivity, 30% transmission)
+    ResonanceDoor = 5  // Harmonic lock gate (90% reflectivity, 45% transmission when sealed)
 };
 
 enum class WaveSignature : std::uint8_t {
@@ -23,19 +23,35 @@ enum class WaveSignature : std::uint8_t {
     DirectionalPing = 3,
     RadialPulse = 4,
     DecoyImpact = 5,
+    SwitchClunk = 6,
     MechanismClunk = 6,
     EnemyTremor = 7,
     AmbientDrip = 8,
-    ShaleCrack = 9,
-    ResonatorHum = 10
+    ResonatorHum = 9,
+    ShaleCrack = 10
 };
 
+// EchoLabyrinth 4.0/5.0: Room-Based Roguelike Chamber Categories
+enum class RoomType : std::uint8_t {
+    Start = 0,      // Entry Sanctuary (Safe, Checkpoint, Tutorial Lore)
+    Combat = 1,     // Standard Acoustic Hunter encounter (locks doors until cleared)
+    Treasure = 2,   // Harmonic Relic Vault (contains a free Relic Pedestal)
+    Puzzle = 3,     // Acoustic Resonator / Mirror alignment puzzle chamber
+    Shop = 4,       // Acoustic Quartermaster (spend Echo Shards on Relics, Repairs, Decoys)
+    Secret = 5,     // Hidden fracture chamber (unsealed by pinging hollow wall with sonar)
+    Challenge = 6,  // High-risk multi-wave arena (locks doors, 2 waves + high Shard/Relic reward)
+    Elite = 6,      // Alias for Challenge/Elite chamber
+    Sanctuary = 7,  // Acoustic Calibration Shrine (Checkpoint + free +2 Hull Integrity restore)
+    Boss = 8,       // The Choir Sovereign Lair (3-phase acoustic boss encounter)
+    FinalExit = 9   // Resonance Ascent Conduit (unlocked after defeating the Boss)
+};
+
+// 4-Directional Room Connections (Binding of Isaac grid style)
 enum class CardinalDir : std::uint8_t {
     North = 0,
     East = 1,
     South = 2,
-    West = 3,
-    Count = 4
+    West = 3
 };
 
 inline constexpr CardinalDir oppositeDir(CardinalDir dir) noexcept {
@@ -44,15 +60,15 @@ inline constexpr CardinalDir oppositeDir(CardinalDir dir) noexcept {
         case CardinalDir::East:  return CardinalDir::West;
         case CardinalDir::South: return CardinalDir::North;
         case CardinalDir::West:  return CardinalDir::East;
-        default:                 return CardinalDir::South;
     }
+    return CardinalDir::South;
 }
 
 inline constexpr int dirDeltaX(CardinalDir dir) noexcept {
     switch (dir) {
-        case CardinalDir::East: return 1;
-        case CardinalDir::West: return -1;
-        default:                return 0;
+        case CardinalDir::East:  return 1;
+        case CardinalDir::West:  return -1;
+        default:                 return 0;
     }
 }
 
@@ -64,30 +80,20 @@ inline constexpr int dirDeltaY(CardinalDir dir) noexcept {
     }
 }
 
-enum class RoomType : std::uint8_t {
-    Start = 0,      // Safe starting chamber at (0,0)
-    Combat = 1,     // Acoustic enemy encounter; locks doors until cleared
-    Treasure = 2,   // Contains an Acoustic Relic pedestal
-    Secret = 3,     // Concealed behind an illusory wall opened by sonar pulses
-    Puzzle = 4,     // Harmonic Resonator & mirror chamber
-    Sanctuary = 5,  // Safe room: restores hull integrity & saves checkpoint
-    Shop = 6,       // Quartermaster terminal: exchange Echo Shards for upgrades
-    Elite = 7,      // High-threat multi-wave / Warden encounter with Relic reward
-    Boss = 8,       // The Choir Sovereign multi-phase acoustic boss arena
-    FinalExit = 9   // Surface Ascent Shaft unlocked after defeating the Boss
-};
-
+// EchoLabyrinth 4.0/5.0: Passive & Active Acoustic Relics / Upgrades
 enum class RelicId : std::uint8_t {
-    FocusedTransducer = 0,  // +35% Ping range, narrower cone, +40% sonar damage
-    PrismaticMirror = 1,    // +2 Wall reflections, reflected rays deal +35% damage
-    MossTreadBoots = 2,     // -45% Footstep noise radius & immunity to Brittle Shale
-    ResonanceCapacitor = 3, // +35% Stamina regen & -25% Ping/Pulse cooldowns
-    SubharmonicVisor = 4,   // Reveals Secret rooms on map & boosts passive dark vision
-    PiezoArmorCore = 5,     // +2 Max Hull Integrity & defensive shockwave on hit
-    EchoSiphonCoil = 6,     // Sonar hits restore Stamina & charge Resonators 2x faster
-    PhantomDecoyRig = 7,    // +3 Decoys & Decoy impacts trigger damaging sonic burst
-    SilentStep = 8,         // Ghost Clear accelerator: +18% move speed & -35% Noise generation
-    Count = 9
+    HarmonicAmplifier = 0, // +35% Sonar Range, +20% Ray Count, +25% Harmonic Damage
+    MossTreadBoots = 1,    // -45% Footstep Loudness, +15% Walk/Sneak Speed, Brittle Shale Immunity
+    PrismaticMirror = 2,   // +2 Max Ray Reflections, reflected rays deal +50% bonus damage
+    KineticCapacitor = 3,  // +35% Stamina Regen, -25% Ability Cooldowns
+    ResonanceCapacitor = 3,// Alias for KineticCapacitor
+    FocusedTransducer = 4, // Focused Ping [LMB] fires twin harmonic beams with +45% lethality
+    SubharmonicVisor = 5,  // Reveals Secret Rooms on map & highlights enemies in dark at close range
+    PiezoArmorCore = 6,    // +2 Max Hull Integrity (HP) & emits retaliatory shockwave when hit
+    EchoSiphonCoil = 7,    // Sonar hits on enemies restore +6 Stamina & charge crystals 2x faster
+    PhantomDecoyRig = 8,   // +3 Decoy Stones & Decoys emit 3x pulsing waves that damage nearby hunters
+    SilentStep = 9,        // Block 1.4 Ghost Clear Relic: +18% Movement Speed & -35% Noise Meter gain
+    Count = 10
 };
 
 enum class RelicRarity : std::uint8_t {
@@ -108,14 +114,16 @@ struct RelicSpec {
 
 inline RelicSpec getRelicSpec(RelicId id) noexcept {
     switch (id) {
-        case RelicId::FocusedTransducer:
-            return {id, "FOCUSED TRANSDUCER", "+35% SONAR RANGE & +40% PING DISRUPTION DAMAGE", RelicRarity::Common, 25, sf::Color(56, 189, 248)};
-        case RelicId::PrismaticMirror:
-            return {id, "PRISMATIC LENS", "+2 WALL REFLECTIONS & +35% BOUNCE DAMAGE", RelicRarity::Uncommon, 35, sf::Color(167, 139, 250)};
+        case RelicId::HarmonicAmplifier:
+            return {id, "HARMONIC AMPLIFIER", "+35% SONAR RANGE, +20% RAYS, +25% SONAR DMG", RelicRarity::Uncommon, 30, sf::Color(56, 189, 248)};
         case RelicId::MossTreadBoots:
-            return {id, "BRYOPHYTE TREADS", "-45% FOOTSTEP NOISE & SHALE CRACK IMMUNITY", RelicRarity::Common, 22, sf::Color(52, 211, 153)};
-        case RelicId::ResonanceCapacitor:
-            return {id, "HARMONIC CAPACITOR", "+35% STAMINA REGEN & -25% SONAR COOLDOWNS", RelicRarity::Uncommon, 32, sf::Color(250, 204, 21)};
+            return {id, "MOSS-TREAD BOOTS", "-45% STEP SOUND, +15% SPEED, SHALE IMMUNITY", RelicRarity::Common, 22, sf::Color(52, 211, 153)};
+        case RelicId::PrismaticMirror:
+            return {id, "PRISMATIC MIRROR", "+2 RAY BOUNCES & +50% REFLECTED RAY DAMAGE", RelicRarity::Rare, 40, sf::Color(167, 139, 250)};
+        case RelicId::KineticCapacitor:
+            return {id, "KINETIC CAPACITOR", "+35% STAMINA REGEN & -25% SONAR COOLDOWNS", RelicRarity::Common, 25, sf::Color(250, 204, 21)};
+        case RelicId::FocusedTransducer:
+            return {id, "FOCUSED TRANSDUCER", "TWIN HARMONIC PING BEAMS & +45% PING DAMAGE", RelicRarity::Relic, 50, sf::Color(244, 63, 94)};
         case RelicId::SubharmonicVisor:
             return {id, "SUBHARMONIC VISOR", "REVEALS SECRET ROOMS ON MAP & +DARK VISION", RelicRarity::Rare, 42, sf::Color(45, 212, 191)};
         case RelicId::PiezoArmorCore:
@@ -134,10 +142,10 @@ inline RelicSpec getRelicSpec(RelicId id) noexcept {
 // BLOCK 1: Sound as Risk Resource — Noise Meter & Silence System (0..100)
 // ============================================================================
 enum class NoiseTier : std::uint8_t {
-    Quiet = 0,    // 0..30:   Enemies remain in Patrol; eligible for Ghost Clear (x1.5 Shards)
-    Audible = 1,  // 30..60:  Enemies in adjacent open rooms transition to Investigate
-    Loud = 2,     // 60..85:  Enemies converge directly on the sound origin
-    Scream = 3    // 85..100: All enemies within 2 grid rooms receive priority hunt lock on player
+    Quiet = 0,    // [0.0, 30.0]:  Enemies remain in Patrol; eligible for Ghost Clear (x1.5 Shards)
+    Audible = 1,  // (30.0, 60.0): Enemies in current/adjacent open rooms transition to InvestigateSound
+    Loud = 2,     // [60.0, 85.0): Enemies converge directly on the sound origin
+    Scream = 3    // [85.0, 100.0]: All enemies within 2 grid rooms receive priority hunt lock on player
 };
 
 enum class NoiseAction : std::uint8_t {
@@ -231,6 +239,11 @@ namespace cfg {
         constexpr float kCombatHitNoise = 10.0f;
         constexpr float kSilenceDecayPerSec = 10.0f;
 
+        // Exact half-open / closed interval boundaries:
+        // Quiet:   [0.0, 30.0]  (<= kThresholdAudible; eligible for Ghost Clear)
+        // Audible: (30.0, 60.0) (>  kThresholdAudible && < kThresholdLoud)
+        // Loud:    [60.0, 85.0) (>= kThresholdLoud    && < kThresholdScream)
+        // Scream:  [85.0, 100.0](>= kThresholdScream)
         constexpr float kThresholdAudible = 30.0f;
         constexpr float kThresholdLoud = 60.0f;
         constexpr float kThresholdScream = 85.0f;

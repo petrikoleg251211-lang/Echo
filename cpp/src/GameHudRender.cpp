@@ -10,9 +10,12 @@
 namespace echo {
 
 void Game::renderNoiseWaveMeter(sf::Vector2f topLeft, sf::Vector2f size) {
+    if (!m_window) return;
+    auto& win = *m_window;
+
     // Background panel for the Oscilloscope Wave Noise Meter (0..100)
     m_ui.drawPanel(
-        m_window,
+        win,
         topLeft,
         size,
         sf::Color(10, 18, 32, 230),
@@ -23,13 +26,13 @@ void Game::renderNoiseWaveMeter(sf::Vector2f topLeft, sf::Vector2f size) {
     const float ratio = std::clamp(m_noiseLevel / cfg::noise::kMaxNoise, 0.0f, 1.0f);
     const NoiseTier tier = classifyNoiseTier(m_noiseLevel);
 
-    sf::Color waveCol(52, 211, 153); // Quiet (0..30)
+    sf::Color waveCol(52, 211, 153); // Quiet [0.0, 30.0]
     if (tier == NoiseTier::Audible) {
-        waveCol = sf::Color(56, 189, 248); // Audible (30..60)
+        waveCol = sf::Color(56, 189, 248); // Audible (30.0, 60.0)
     } else if (tier == NoiseTier::Loud) {
-        waveCol = sf::Color(250, 204, 21); // Loud (60..85)
+        waveCol = sf::Color(250, 204, 21); // Loud [60.0, 85.0)
     } else if (tier == NoiseTier::Scream) {
-        waveCol = sf::Color(244, 63, 94); // Scream (85+)
+        waveCol = sf::Color(244, 63, 94); // Scream [85.0, 100.0]
     }
 
     // Subtle fill behind active noise portion
@@ -37,7 +40,7 @@ void Game::renderNoiseWaveMeter(sf::Vector2f topLeft, sf::Vector2f size) {
         sf::RectangleShape activeBg({(size.x - 4.0f) * ratio, size.y - 4.0f});
         activeBg.setPosition(topLeft.x + 2.0f, topLeft.y + 2.0f);
         activeBg.setFillColor(sf::Color(waveCol.r, waveCol.g, waveCol.b, 55));
-        m_window.draw(activeBg);
+        win.draw(activeBg);
     }
 
     // Threshold markers at 30% (Audible), 60% (Loud), and 85% (Scream)
@@ -48,7 +51,7 @@ void Game::renderNoiseWaveMeter(sf::Vector2f topLeft, sf::Vector2f size) {
         ticks[static_cast<std::size_t>(i * 2)] = sf::Vertex({tx, topLeft.y + 1.0f}, sf::Color(148, 163, 184, 150));
         ticks[static_cast<std::size_t>(i * 2 + 1)] = sf::Vertex({tx, topLeft.y + size.y - 1.0f}, sf::Color(148, 163, 184, 150));
     }
-    m_window.draw(ticks);
+    win.draw(ticks);
 
     // Sinusoidal acoustic waveform across the bar width
     constexpr int kSamples = 48;
@@ -63,61 +66,58 @@ void Game::renderNoiseWaveMeter(sf::Vector2f topLeft, sf::Vector2f size) {
         const bool inActiveRegion = (u <= ratio + 0.02f);
         const float envelope = inActiveRegion ? std::sin(u * 3.1415926f) : 0.12f;
         const float yOffset = std::sin(u * freq * 3.1415926f - m_runTimeSec * (8.0f + ratio * 14.0f)) * maxAmp * envelope;
-
         const sf::Color ptCol = inActiveRegion
             ? waveCol
             : sf::Color(71, 85, 105, 110);
         wave[static_cast<std::size_t>(s)] = sf::Vertex({x, midY + yOffset}, ptCol);
     }
-    m_window.draw(wave);
+    win.draw(wave);
 }
 
 void Game::renderHud() {
+    if (!m_window) return;
+    auto& win = *m_window;
     const auto& room = m_labyrinth.currentRoom();
 
-    // Top-left Chamber & Seed Telemetry Panel
-    m_ui.drawPanel(m_window, {18.0f, 14.0f}, {540.0f, 68.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
-    m_ui.drawText(m_window, room.name, {30.0f, 22.0f}, 14.0f, sf::Color(56, 189, 248), TextAlign::Left, true);
+    // Top-left Chamber & Objective Banner
+    m_ui.drawPanel(win, {16.0f, 14.0f}, {690.0f, 62.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
+    const std::string header = room.name + "  [" + std::string(Labyrinth::roomTypeName(room.type)) + "]   //   SEED #" + std::to_string(m_labyrinth.runSeed());
+    m_ui.drawText(win, header, {28.0f, 22.0f}, 12.5f, sf::Color(56, 189, 248), TextAlign::Left, true);
+    m_ui.drawText(win, room.objectiveText, {28.0f, 48.0f}, 10.5f, sf::Color(203, 213, 225));
 
-    std::string seedLine = "SEED #" + std::to_string(m_labyrinth.runSeed()) + "  |  VISITED: "
-        + std::to_string(m_labyrinth.visitedRooms().size()) + "/" + std::to_string(m_labyrinth.roomCount());
-    m_ui.drawText(m_window, seedLine, {545.0f, 23.0f}, 10.5f, sf::Color(148, 163, 184), TextAlign::Right);
-    m_ui.drawText(m_window, room.objectiveText, {30.0f, 48.0f}, 10.5f, sf::Color(203, 213, 225));
-
-    // Bottom-left Hull Integrity (Health), Stamina, Echo Shards, Decoys & Relics Panel
-    m_ui.drawPanel(m_window, {18.0f, 704.0f}, {520.0f, 82.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
+    // Bottom-left Player Vitality, Stamina, Shards, & Relics Panel
+    m_ui.drawPanel(win, {16.0f, 704.0f}, {520.0f, 82.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
 
     // Hull Integrity pips
-    m_ui.drawText(m_window, "HULL INTEGRITY", {30.0f, 712.0f}, 10.5f, sf::Color(248, 113, 113), TextAlign::Left, true);
+    m_ui.drawText(win, "HULL INTEGRITY:", {28.0f, 712.0f}, 10.5f, sf::Color(148, 163, 184));
     for (int i = 0; i < m_player.maxHealth(); ++i) {
-        sf::RectangleShape pip({14.0f, 10.0f});
-        pip.setPosition(30.0f + static_cast<float>(i) * 18.0f, 730.0f);
-        if (i < m_player.health()) {
-            pip.setFillColor(sf::Color(244, 63, 94));
-            pip.setOutlineColor(sf::Color(253, 164, 175));
-        } else {
-            pip.setFillColor(sf::Color(30, 20, 32));
-            pip.setOutlineColor(sf::Color(71, 85, 105));
-        }
-        pip.setOutlineThickness(1.0f);
-        m_window.draw(pip);
+        const bool filled = (i < m_player.health());
+        const sf::Vector2f pipPos{28.0f + static_cast<float>(i) * 20.0f, 728.0f};
+        m_ui.drawPanel(
+            win,
+            pipPos,
+            {15.0f, 12.0f},
+            filled ? sf::Color(56, 189, 248, 235) : sf::Color(15, 23, 42, 200),
+            filled ? sf::Color(186, 230, 253) : sf::Color(51, 65, 85),
+            1.0f
+        );
     }
 
     // Stamina Bar
-    m_ui.drawText(m_window, "STAMINA", {30.0f, 748.0f}, 10.0f, sf::Color(148, 163, 184));
+    m_ui.drawText(win, "STAMINA", {28.0f, 748.0f}, 10.0f, sf::Color(148, 163, 184));
     m_ui.drawProgressBar(
-        m_window,
-        {30.0f, 764.0f},
+        win,
+        {28.0f, 764.0f},
         {165.0f, 10.0f},
         m_player.stamina() / 100.0f,
         sf::Color(15, 23, 42, 220),
-        m_player.stamina() < 25.0f ? sf::Color(239, 68, 68) : sf::Color(56, 189, 248),
+        m_player.stamina() < 25.0f ? sf::Color(244, 63, 94) : sf::Color(34, 211, 238),
         sf::Color(51, 65, 85, 220)
     );
 
-    // Echo Shards, Decoy Stones, and Active Relic Count
+    // Echo Shards, Decoys, Relics counters
     m_ui.drawText(
-        m_window,
+        win,
         "ECHO SHARDS: " + std::to_string(m_player.echoShards()),
         {220.0f, 714.0f},
         11.5f,
@@ -126,14 +126,14 @@ void Game::renderHud() {
         true
     );
     m_ui.drawText(
-        m_window,
+        win,
         "DECOY STONES [RMB]: " + std::to_string(m_player.decoyCount()),
         {220.0f, 736.0f},
         11.0f,
         sf::Color(167, 139, 250)
     );
     m_ui.drawText(
-        m_window,
+        win,
         "RELICS [TAB]: " + std::to_string(m_player.relics().size()) + "/" + std::to_string(static_cast<int>(RelicId::Count)),
         {220.0f, 758.0f},
         11.0f,
@@ -141,7 +141,7 @@ void Game::renderHud() {
     );
 
     // Bottom-Center Block 1: Oscilloscope Wave Noise Meter (0..100) & Ghost Clear Status
-    m_ui.drawPanel(m_window, {548.0f, 704.0f}, {352.0f, 82.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
+    m_ui.drawPanel(win, {548.0f, 704.0f}, {352.0f, 82.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
     const NoiseTier nTier = classifyNoiseTier(m_noiseLevel);
     sf::Color tierCol(52, 211, 153);
     if (nTier == NoiseTier::Audible) tierCol = sf::Color(56, 189, 248);
@@ -156,7 +156,7 @@ void Game::renderHud() {
         static_cast<int>(std::round(m_noiseLevel)),
         noiseTierName(nTier)
     );
-    m_ui.drawText(m_window, noiseHeader, {562.0f, 712.0f}, 11.0f, tierCol, TextAlign::Left, true);
+    m_ui.drawText(win, noiseHeader, {562.0f, 712.0f}, 11.0f, tierCol, TextAlign::Left, true);
 
     renderNoiseWaveMeter({562.0f, 732.0f}, {324.0f, 20.0f});
 
@@ -165,7 +165,7 @@ void Game::renderHud() {
         ? "GHOST CLEAR READY (PEAK <= 30 -> x1.5 SHARDS)"
         : ("PEAK NOISE: " + std::to_string(static_cast<int>(std::round(m_roomPeakNoise))) + "/100 (GHOST CLEAR LOST)");
     m_ui.drawText(
-        m_window,
+        win,
         ghostLine,
         {562.0f, 758.0f},
         9.5f,
@@ -173,7 +173,7 @@ void Game::renderHud() {
     );
 
     // Bottom-right Acoustic Threat & Boss Bar Panel
-    m_ui.drawPanel(m_window, {910.0f, 704.0f}, {352.0f, 82.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
+    m_ui.drawPanel(win, {910.0f, 704.0f}, {352.0f, 82.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
 
     std::size_t activeEnemyCount = 0;
     const EnemyAI* bossPtr = nullptr;
@@ -189,7 +189,7 @@ void Game::renderHud() {
 
     if (bossPtr != nullptr) {
         m_ui.drawText(
-            m_window,
+            win,
             "BOSS: THE CHOIR SOVEREIGN (PHASE " + std::to_string(bossPtr->bossPhase()) + ")",
             {924.0f, 714.0f},
             11.5f,
@@ -198,7 +198,7 @@ void Game::renderHud() {
             true
         );
         m_ui.drawProgressBar(
-            m_window,
+            win,
             {924.0f, 738.0f},
             {324.0f, 12.0f},
             bossPtr->health() / std::max(1.0f, bossPtr->maxHealth()),
@@ -207,7 +207,7 @@ void Game::renderHud() {
             sf::Color(159, 18, 57, 230)
         );
         m_ui.drawText(
-            m_window,
+            win,
             "PING [LMB] & PULSE [SPACE] TO SHATTER",
             {924.0f, 758.0f},
             10.0f,
@@ -216,9 +216,9 @@ void Game::renderHud() {
     } else if (activeEnemyCount > 0) {
         const std::string threatLine = "HUNTERS ACTIVE: " + std::to_string(activeEnemyCount)
             + " (WAVE " + std::to_string(m_currentWaveIndex + 1) + "/" + std::to_string(room.totalWaves) + ")";
-        m_ui.drawText(m_window, threatLine, {924.0f, 714.0f}, 11.5f, sf::Color(248, 113, 113), TextAlign::Left, true);
+        m_ui.drawText(win, threatLine, {924.0f, 714.0f}, 11.5f, sf::Color(248, 113, 113), TextAlign::Left, true);
         m_ui.drawProgressBar(
-            m_window,
+            win,
             {924.0f, 738.0f},
             {324.0f, 10.0f},
             highestSuspicion / 100.0f,
@@ -227,33 +227,35 @@ void Game::renderHud() {
             sf::Color(51, 65, 85, 220)
         );
         m_ui.drawText(
-            m_window,
+            win,
             "SONAR PING [LMB] DEALS HARMONIC DAMAGE",
             {924.0f, 756.0f},
             10.0f,
             sf::Color(148, 163, 184)
         );
     } else {
-        m_ui.drawText(m_window, "CHAMBER CLEAR — NO ACOUSTIC THREATS", {924.0f, 722.0f}, 12.0f, sf::Color(52, 211, 153), TextAlign::Left, true);
-        m_ui.drawText(m_window, "[TAB/M] MAP & RELICS   [F5] SAVE", {924.0f, 750.0f}, 10.5f, sf::Color(148, 163, 184));
+        m_ui.drawText(win, "CHAMBER CLEAR — NO ACOUSTIC THREATS", {924.0f, 722.0f}, 12.0f, sf::Color(52, 211, 153), TextAlign::Left, true);
+        m_ui.drawText(win, "[TAB/M] MAP & RELICS   [F5] SAVE", {924.0f, 750.0f}, 10.5f, sf::Color(148, 163, 184));
     }
 
     if (m_statusBannerTimer > 0.0f) {
-        m_ui.drawPanel(m_window, {250.0f, 88.0f}, {780.0f, 32.0f}, sf::Color(8, 22, 42, 225), sf::Color(56, 189, 248, 200));
-        m_ui.drawText(m_window, m_statusBannerText, {640.0f, 97.0f}, 11.5f, sf::Color(186, 230, 253), TextAlign::Center, true);
+        m_ui.drawPanel(win, {250.0f, 88.0f}, {780.0f, 32.0f}, sf::Color(8, 22, 42, 225), sf::Color(56, 189, 248, 200));
+        m_ui.drawText(win, m_statusBannerText, {640.0f, 97.0f}, 11.5f, sf::Color(186, 230, 253), TextAlign::Center, true);
     }
 
     if (m_loreDisplayTimer > 0.0f) {
-        m_ui.drawPanel(m_window, {240.0f, 608.0f}, {800.0f, 82.0f}, sf::Color(10, 20, 38, 235), sf::Color(56, 189, 248, 220), 2.0f);
-        m_ui.drawText(m_window, m_activeLoreTitle, {260.0f, 618.0f}, 13.0f, sf::Color(56, 189, 248), TextAlign::Left, true);
-        m_ui.drawText(m_window, m_activeLoreBody, {260.0f, 646.0f}, 10.5f, sf::Color(226, 232, 240));
+        m_ui.drawPanel(win, {240.0f, 608.0f}, {800.0f, 82.0f}, sf::Color(10, 20, 38, 235), sf::Color(56, 189, 248, 220), 2.0f);
+        m_ui.drawText(win, m_activeLoreTitle, {260.0f, 618.0f}, 13.0f, sf::Color(56, 189, 248), TextAlign::Left, true);
+        m_ui.drawText(win, m_activeLoreBody, {260.0f, 646.0f}, 10.5f, sf::Color(226, 232, 240));
     }
 }
 
 void Game::renderCornerMinimap() {
+    if (!m_window) return;
+    auto& win = *m_window;
     const sf::Vector2f boxPos{1072.0f, 14.0f};
     const sf::Vector2f boxSize{190.0f, 134.0f};
-    m_ui.drawPanel(m_window, boxPos, boxSize, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
+    m_ui.drawPanel(win, boxPos, boxSize, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
 
     const auto& cur = m_labyrinth.currentRoom();
     const sf::Vector2f center{boxPos.x + boxSize.x * 0.5f, boxPos.y + boxSize.y * 0.5f + 6.0f};
@@ -261,7 +263,7 @@ void Game::renderCornerMinimap() {
     constexpr float cellW = 18.0f;
     constexpr float cellH = 14.0f;
 
-    m_ui.drawText(m_window, "SONAR GRID [TAB]", {center.x, boxPos.y + 6.0f}, 9.5f, sf::Color(125, 211, 252), TextAlign::Center, true);
+    m_ui.drawText(win, "SONAR GRID [TAB]", {center.x, boxPos.y + 6.0f}, 9.5f, sf::Color(125, 211, 252), TextAlign::Center, true);
 
     for (std::size_t i = 0; i < m_labyrinth.roomCount(); ++i) {
         const auto& rm = m_labyrinth.roomAt(i);
@@ -289,16 +291,18 @@ void Game::renderCornerMinimap() {
             outline = sf::Color(224, 242, 254);
         }
 
-        m_ui.drawPanel(m_window, pos, {cellW, cellH}, fill, outline, 1.2f);
+        m_ui.drawPanel(win, pos, {cellW, cellH}, fill, outline, 1.2f);
         const std::string iconStr(1, Labyrinth::roomTypeIcon(rm.type));
-        m_ui.drawText(m_window, iconStr, {pos.x + cellW * 0.5f, pos.y + 2.0f}, 8.5f, outline, TextAlign::Center, true);
+        m_ui.drawText(win, iconStr, {pos.x + cellW * 0.5f, pos.y + 2.0f}, 8.5f, outline, TextAlign::Center, true);
     }
 }
 
 void Game::renderMinimapOverlay() {
-    m_ui.drawPanel(m_window, {110.0f, 75.0f}, {1060.0f, 650.0f}, sf::Color(4, 10, 22, 244), sf::Color(56, 189, 248, 220), 2.0f);
+    if (!m_window) return;
+    auto& win = *m_window;
+    m_ui.drawPanel(win, {110.0f, 75.0f}, {1060.0f, 650.0f}, sf::Color(4, 10, 22, 244), sf::Color(56, 189, 248, 220), 2.0f);
     m_ui.drawText(
-        m_window,
+        win,
         "PROCEDURAL LABYRINTH TOPOLOGY & RELIC LOADOUT",
         {640.0f, 94.0f},
         18.0f,
@@ -311,7 +315,7 @@ void Game::renderMinimapOverlay() {
         + "   |   ROOMS CLEARED: " + std::to_string(m_labyrinth.clearedRooms().size()) + "/" + std::to_string(m_labyrinth.roomCount())
         + "   |   GHOST CLEARS: " + std::to_string(m_ghostClearsThisRun)
         + "   |   META VICTORIES: " + std::to_string(m_metaTotalVictories);
-    m_ui.drawText(m_window, subHeader, {640.0f, 122.0f}, 11.5f, sf::Color(148, 163, 184), TextAlign::Center);
+    m_ui.drawText(win, subHeader, {640.0f, 122.0f}, 11.5f, sf::Color(148, 163, 184), TextAlign::Center);
 
     const auto& cur = m_labyrinth.currentRoom();
     const sf::Vector2f mapOrigin{410.0f, 395.0f};
@@ -345,7 +349,7 @@ void Game::renderMinimapOverlay() {
             links.append(sf::Vertex(c2, sf::Color(56, 189, 248, 150)));
         }
     }
-    m_window.draw(links);
+    win.draw(links);
 
     for (std::size_t i = 0; i < m_labyrinth.roomCount(); ++i) {
         const auto& rm = m_labyrinth.roomAt(i);
@@ -372,31 +376,31 @@ void Game::renderMinimapOverlay() {
             outline = sf::Color(224, 242, 254);
         }
 
-        m_ui.drawPanel(m_window, pos, {boxW, boxH}, fill, outline, 1.5f);
+        m_ui.drawPanel(win, pos, {boxW, boxH}, fill, outline, 1.5f);
         const std::string label(1, Labyrinth::roomTypeIcon(rm.type));
-        m_ui.drawText(m_window, label, {pos.x + boxW * 0.5f, pos.y + 5.0f}, 11.0f, outline, TextAlign::Center, true);
+        m_ui.drawText(win, label, {pos.x + boxW * 0.5f, pos.y + 5.0f}, 11.0f, outline, TextAlign::Center, true);
     }
 
     // Right Panel: Collected Relics & Synergies
-    m_ui.drawPanel(m_window, {720.0f, 160.0f}, {420.0f, 480.0f}, sf::Color(8, 18, 34, 230), sf::Color(30, 58, 95, 200));
-    m_ui.drawText(m_window, "EQUIPPED ACOUSTIC RELICS", {930.0f, 174.0f}, 13.5f, sf::Color(52, 211, 153), TextAlign::Center, true);
+    m_ui.drawPanel(win, {720.0f, 160.0f}, {420.0f, 480.0f}, sf::Color(8, 18, 34, 230), sf::Color(30, 58, 95, 200));
+    m_ui.drawText(win, "EQUIPPED ACOUSTIC RELICS", {930.0f, 174.0f}, 13.5f, sf::Color(52, 211, 153), TextAlign::Center, true);
 
     float ry = 208.0f;
     if (m_player.relics().empty()) {
-        m_ui.drawText(m_window, "NO RELICS COLLECTED YET.", {930.0f, 250.0f}, 11.5f, sf::Color(148, 163, 184), TextAlign::Center);
-        m_ui.drawText(m_window, "EXPLORE TREASURE [T], SHOP [$],", {930.0f, 275.0f}, 10.5f, sf::Color(148, 163, 184), TextAlign::Center);
-        m_ui.drawText(m_window, "SECRET [?], OR GHOST CLEAR CHAMBERS.", {930.0f, 296.0f}, 10.5f, sf::Color(148, 163, 184), TextAlign::Center);
+        m_ui.drawText(win, "NO RELICS COLLECTED YET.", {930.0f, 250.0f}, 11.5f, sf::Color(148, 163, 184), TextAlign::Center);
+        m_ui.drawText(win, "EXPLORE TREASURE [T], SHOP [$],", {930.0f, 275.0f}, 10.5f, sf::Color(148, 163, 184), TextAlign::Center);
+        m_ui.drawText(win, "SECRET [?], OR GHOST CLEAR CHAMBERS.", {930.0f, 296.0f}, 10.5f, sf::Color(148, 163, 184), TextAlign::Center);
     } else {
         for (RelicId rId : m_player.relics()) {
             const RelicSpec spec = getRelicSpec(rId);
-            m_ui.drawText(m_window, "* " + std::string(spec.name), {738.0f, ry}, 11.5f, spec.tint, TextAlign::Left, true);
-            m_ui.drawText(m_window, spec.effectSummary, {750.0f, ry + 16.0f}, 9.5f, sf::Color(203, 213, 225));
+            m_ui.drawText(win, "* " + std::string(spec.name), {738.0f, ry}, 11.5f, spec.tint, TextAlign::Left, true);
+            m_ui.drawText(win, spec.effectSummary, {750.0f, ry + 16.0f}, 9.5f, sf::Color(203, 213, 225));
             ry += 42.0f;
         }
     }
 
     m_ui.drawText(
-        m_window,
+        win,
         "LEGEND: [S] START  [C] COMBAT  [T] RELIC  [$] SHOP  [+] SANCTUARY  [!] ELITE  [?] SECRET  [B] BOSS  [^] EXIT",
         {640.0f, 692.0f},
         10.0f,
@@ -406,7 +410,9 @@ void Game::renderMinimapOverlay() {
 }
 
 void Game::renderMenuOverlay() {
-    m_ui.drawPanel(m_window, {320.0f, 120.0f}, {640.0f, 550.0f}, sf::Color(5, 11, 22, 238), sf::Color(56, 189, 248, 210), 2.0f);
+    if (!m_window) return;
+    auto& win = *m_window;
+    m_ui.drawPanel(win, {320.0f, 120.0f}, {640.0f, 550.0f}, sf::Color(5, 11, 22, 238), sf::Color(56, 189, 248, 210), 2.0f);
 
     std::string title = "ECHOLABYRINTH 5.0 — RESONANCE";
     std::string subtitle = "SOUND IS SIGHT, WEAPON, & RISK  //  NATIVE C++17 & SFML";
@@ -429,13 +435,13 @@ void Game::renderMenuOverlay() {
         titleCol = sf::Color(52, 211, 153);
     }
 
-    m_ui.drawText(m_window, title, {640.0f, 160.0f}, 24.0f, titleCol, TextAlign::Center, true);
-    m_ui.drawText(m_window, subtitle, {640.0f, 202.0f}, 11.5f, sf::Color(148, 163, 184), TextAlign::Center);
+    m_ui.drawText(win, title, {640.0f, 160.0f}, 24.0f, titleCol, TextAlign::Center, true);
+    m_ui.drawText(win, subtitle, {640.0f, 202.0f}, 11.5f, sf::Color(148, 163, 184), TextAlign::Center);
 
     const std::string metaLine = "META-PROGRESSION: RUNS #" + std::to_string(m_metaTotalRuns)
         + "  |  VICTORIES: " + std::to_string(m_metaTotalVictories)
         + "  |  BOSSES SHATTERED: " + std::to_string(m_metaBossesDefeated);
-    m_ui.drawText(m_window, metaLine, {640.0f, 232.0f}, 10.5f, sf::Color(250, 204, 21), TextAlign::Center);
+    m_ui.drawText(win, metaLine, {640.0f, 232.0f}, 10.5f, sf::Color(250, 204, 21), TextAlign::Center);
 
     for (std::size_t i = 0; i < m_menuButtons.size(); ++i) {
         const auto& btn = m_menuButtons[i];
@@ -452,12 +458,12 @@ void Game::renderMenuOverlay() {
             textCol = sf::Color(71, 85, 105);
         }
 
-        m_ui.drawPanel(m_window, topLeft, btn.size, fill, outline, selected ? 2.0f : 1.0f);
-        m_ui.drawText(m_window, btn.label, {btn.center.x, btn.center.y - 7.0f}, 13.5f, textCol, TextAlign::Center, selected);
+        m_ui.drawPanel(win, topLeft, btn.size, fill, outline, selected ? 2.0f : 1.0f);
+        m_ui.drawText(win, btn.label, {btn.center.x, btn.center.y - 7.0f}, 13.5f, textCol, TextAlign::Center, selected);
     }
 
     m_ui.drawText(
-        m_window,
+        win,
         "LMB/E: SONAR PING (+12 NOISE) | SPACE: PULSE (+30 NOISE) | RMB/G: DECOY (+15) | KEEP NOISE <= 30 FOR GHOST CLEAR",
         {640.0f, 642.0f},
         9.5f,
@@ -467,14 +473,16 @@ void Game::renderMenuOverlay() {
 }
 
 void Game::renderSettingsOverlay() {
-    m_ui.drawPanel(m_window, {290.0f, 110.0f}, {700.0f, 575.0f}, sf::Color(5, 11, 22, 242), sf::Color(56, 189, 248, 210), 2.0f);
-    m_ui.drawText(m_window, "3D SPATIAL AUDIO & ACOUSTIC ENGINE SETTINGS", {640.0f, 142.0f}, 18.0f, sf::Color(56, 189, 248), TextAlign::Center, true);
+    if (!m_window) return;
+    auto& win = *m_window;
+    m_ui.drawPanel(win, {290.0f, 110.0f}, {700.0f, 575.0f}, sf::Color(5, 11, 22, 242), sf::Color(56, 189, 248, 210), 2.0f);
+    m_ui.drawText(win, "3D SPATIAL AUDIO & ACOUSTIC ENGINE SETTINGS", {640.0f, 142.0f}, 18.0f, sf::Color(56, 189, 248), TextAlign::Center, true);
 
     char buf0[64], buf1[64], buf2[64], buf3[64], buf4[64], buf5[64], buf6[64], buf7[64];
-    std::snprintf(buf0, sizeof(buf0), "MASTER VOLUME: %.0f%%", m_audio.masterVolume());
-    std::snprintf(buf1, sizeof(buf1), "ADAPTIVE MUSIC LAYER: %.0f%%", m_audio.musicVolume());
-    std::snprintf(buf2, sizeof(buf2), "3D SPATIAL SFX VOLUME: %.0f%%", m_audio.sfxVolume());
-    std::snprintf(buf3, sizeof(buf3), "AMBIENT COMPLEX DRONE: %.0f%%", m_audio.ambientVolume());
+    std::snprintf(buf0, sizeof(buf0), "MASTER VOLUME: %.0f%%", m_audio ? m_audio->masterVolume() : 80.0f);
+    std::snprintf(buf1, sizeof(buf1), "ADAPTIVE MUSIC LAYER: %.0f%%", m_audio ? m_audio->musicVolume() : 75.0f);
+    std::snprintf(buf2, sizeof(buf2), "3D SPATIAL SFX VOLUME: %.0f%%", m_audio ? m_audio->sfxVolume() : 85.0f);
+    std::snprintf(buf3, sizeof(buf3), "AMBIENT COMPLEX DRONE: %.0f%%", m_audio ? m_audio->ambientVolume() : 80.0f);
     std::snprintf(buf4, sizeof(buf4), "ACOUSTIC RAY DENSITY: %.0f%%", m_acoustics.rayDensityScale() * 100.0f);
     std::snprintf(buf5, sizeof(buf5), "MAX WALL REFLECTIONS: %d BOUNCES", static_cast<int>(m_acoustics.maxReflections()));
     std::snprintf(buf6, sizeof(buf6), "AMBIENT VISIBILITY: %.0f%%", m_ambientVisibility * 100.0f);
@@ -497,7 +505,7 @@ void Game::renderSettingsOverlay() {
         const sf::Vector2f topLeft = btn.center - btn.size * 0.5f;
 
         m_ui.drawPanel(
-            m_window,
+            win,
             topLeft,
             btn.size,
             selected ? sf::Color(18, 48, 78, 240) : sf::Color(10, 22, 38, 210),
@@ -505,7 +513,7 @@ void Game::renderSettingsOverlay() {
             selected ? 2.0f : 1.0f
         );
         m_ui.drawText(
-            m_window,
+            win,
             btn.label,
             {btn.center.x, btn.center.y - 6.5f},
             12.5f,
@@ -517,8 +525,10 @@ void Game::renderSettingsOverlay() {
 }
 
 void Game::renderControlsOverlay() {
-    m_ui.drawPanel(m_window, {210.0f, 85.0f}, {860.0f, 635.0f}, sf::Color(5, 11, 22, 244), sf::Color(56, 189, 248, 210), 2.0f);
-    m_ui.drawText(m_window, "SURVEYOR FIELD MANUAL — RESONANCE & NOISE DISCIPLINE", {640.0f, 112.0f}, 18.5f, sf::Color(56, 189, 248), TextAlign::Center, true);
+    if (!m_window) return;
+    auto& win = *m_window;
+    m_ui.drawPanel(win, {210.0f, 85.0f}, {860.0f, 635.0f}, sf::Color(5, 11, 22, 244), sf::Color(56, 189, 248, 210), 2.0f);
+    m_ui.drawText(win, "SURVEYOR FIELD MANUAL — RESONANCE & NOISE DISCIPLINE", {640.0f, 112.0f}, 18.5f, sf::Color(56, 189, 248), TextAlign::Center, true);
 
     const char* lines[] = {
         "NOISE METER (0-100) & SILENCE DISCIPLINE:",
@@ -539,7 +549,7 @@ void Game::renderControlsOverlay() {
     for (const char* line : lines) {
         const bool isHeader = (line[0] != ' ' && line[0] != '\0');
         m_ui.drawText(
-            m_window,
+            win,
             line,
             {250.0f, y},
             isHeader ? 12.5f : 11.0f,
@@ -550,8 +560,8 @@ void Game::renderControlsOverlay() {
 
     if (!m_menuButtons.empty()) {
         const auto& btn = m_menuButtons[0];
-        m_ui.drawPanel(m_window, btn.center - btn.size * 0.5f, btn.size, sf::Color(20, 48, 76), sf::Color(56, 189, 248), 2.0f);
-        m_ui.drawText(m_window, btn.label, {btn.center.x, btn.center.y - 7.0f}, 14.0f, sf::Color(224, 242, 254), TextAlign::Center, true);
+        m_ui.drawPanel(win, btn.center - btn.size * 0.5f, btn.size, sf::Color(20, 48, 76), sf::Color(56, 189, 248), 2.0f);
+        m_ui.drawText(win, btn.label, {btn.center.x, btn.center.y - 7.0f}, 14.0f, sf::Color(224, 242, 254), TextAlign::Center, true);
     }
 }
 

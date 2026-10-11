@@ -28,7 +28,7 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [1/12]: 20 distinct seeds verified for 2D grid uniqueness, N/E/S/W door symmetry, & Boss/Exit reachability.\n";
+    std::cout << "[SelfTest] PASS [1/13]: 20 distinct seeds verified for 2D grid uniqueness, N/E/S/W door symmetry, & Boss/Exit reachability.\n";
 
     // 2. Seed Determinism Verification (same seed -> identical graph)
     Labyrinth labA;
@@ -47,7 +47,7 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [2/12]: Deterministic seed reproducibility verified across all 32 chambers.\n";
+    std::cout << "[SelfTest] PASS [2/13]: Deterministic seed reproducibility verified across all 32 chambers.\n";
 
     // 3. Verify 2D BFS Geometric Walkability across every room in the procedural run
     for (int r = 0; r < static_cast<int>(labA.roomCount()); ++r) {
@@ -57,7 +57,7 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [3/12]: All 32 procedural chambers verified via 2D BFS grid pathfinding.\n";
+    std::cout << "[SelfTest] PASS [3/13]: All 32 procedural chambers verified via 2D BFS grid pathfinding.\n";
 
     // 4. Verify Combat Door Lockdown, Room Clear Unsealing, and Secret Wall Sonar Fracture
     int combatRoomId = -1;
@@ -97,7 +97,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Secret room wall was not unsealed by sonar pulse.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [4/12]: Combat door lockdown, room clear unsealing, & Secret Wall sonar fracture verified.\n";
+    std::cout << "[SelfTest] PASS [4/13]: Combat door lockdown, room clear unsealing, & Secret Wall sonar fracture verified.\n";
 
     // 5. Verify AcousticSystem reflections & multi-wall material attenuation
     const std::vector<WallSegment> metalWall = {{{500.0f, 100.0f}, {500.0f, 700.0f}, SurfaceMaterial::Metal, -1, false}};
@@ -113,7 +113,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Material transmission ordering invalid.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [5/12]: AcousticSystem reflections & multi-wall material attenuation verified.\n";
+    std::cout << "[SelfTest] PASS [5/13]: AcousticSystem reflections & multi-wall material attenuation verified.\n";
 
     // 6. Verify AcousticResonator crystal charging in Puzzle room
     int puzzleRoomId = -1;
@@ -145,7 +145,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Puzzle room AcousticResonator did not charge.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [6/12]: Puzzle chamber AcousticResonator crystal energized and unlocked.\n";
+    std::cout << "[SelfTest] PASS [6/13]: Puzzle chamber AcousticResonator crystal energized and unlocked.\n";
 
     // 7. Verify Player Hull Integrity, Echo Shards economy, and Relic synergies
     Player player;
@@ -166,7 +166,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Player invulnerability frames or damage failed.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [7/12]: Player Hull Integrity, Echo Shards economy, & Relic synergies verified.\n";
+    std::cout << "[SelfTest] PASS [7/13]: Player Hull Integrity, Echo Shards economy, & Relic synergies verified.\n";
 
     // 8. Verify EnemyAI 5 archetypes, 3-phase AbyssalBoss, and harmonic sonar disruption damage
     EnemyAI boss;
@@ -197,7 +197,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: AbyssalBoss was not defeated when HP reached 0.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [8/12]: EnemyAI 5 variants, 3-phase AbyssalBoss, & harmonic sonar damage verified.\n";
+    std::cout << "[SelfTest] PASS [8/13]: EnemyAI 5 variants, 3-phase AbyssalBoss, & harmonic sonar damage verified.\n";
 
     // 9. Verify SaveSystem V4 atomic write, FNV-1a checksum, and full roguelike + meta state round-trip
     const std::string testSavePath = SaveSystem::resolveSaveFilePath(exeDir, "test_echolabyrinth_v4.dat");
@@ -215,7 +215,7 @@ int Game::runSelfTest(const std::string& exeDir) {
     outSave.bossesDefeated = 4;
     outSave.visitedRooms = {0, 1, 2, 5};
     outSave.clearedRooms = {0, 1, 2};
-    outSave.collectedRelics = {0, 1, 5};
+    outSave.collectedRelics = {0, 1, 5, 9}; // Includes SilentStep (9) while staying V4 compatible
 
     if (!SaveSystem::saveToFile(testSavePath, outSave)) {
         std::cerr << "[SelfTest] FAIL: Could not write V4 save file.\n";
@@ -229,7 +229,7 @@ int Game::runSelfTest(const std::string& exeDir) {
     std::remove(testSavePath.c_str());
 
     if (inSave.runSeed != 0xDEADBEEFu || inSave.echoShards != 42 || inSave.playerMaxHealth != 8 ||
-        inSave.totalVictories != 3 || inSave.collectedRelics.size() != 3 || inSave.clearedRooms.size() != 3) {
+        inSave.totalVictories != 3 || inSave.collectedRelics.size() != 4 || inSave.clearedRooms.size() != 3) {
         std::cerr << "[SelfTest] FAIL: V4 save round-trip data mismatch.\n";
         return 1;
     }
@@ -245,7 +245,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         return 1;
     }
     std::remove(testSavePath.c_str());
-    std::cout << "[SelfTest] PASS [9/12]: SaveSystem V4 atomic serialization, seed/relic/meta round-trip, & checksum verified.\n";
+    std::cout << "[SelfTest] PASS [9/13]: SaveSystem V4 atomic serialization, seed/relic/meta round-trip, & checksum verified.\n";
 
     // 10. Verify AssetManager 3D Wavefront OBJ models and procedural material textures
     AssetManager assets;
@@ -262,11 +262,23 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [10/12]: AssetManager loaded " << assets.loadedDiskModelCount()
+    std::cout << "[SelfTest] PASS [10/13]: AssetManager loaded " << assets.loadedDiskModelCount()
               << "/7 Wavefront 3D .obj models (" << assets.totalTriangleCount()
               << " triangles) and 6 RGBA material textures.\n";
 
-    // 11. BLOCK 1.1 & 1.2: Deterministic Noise Meter Action -> Expected Value & Threshold Classification
+    // 11. BLOCK 1.1 & 1.2: Deterministic Noise Meter Action -> Expected Value & Exact Boundary Classification
+    if (classifyNoiseTier(0.0f) != NoiseTier::Quiet ||
+        classifyNoiseTier(30.0f) != NoiseTier::Quiet ||
+        classifyNoiseTier(30.01f) != NoiseTier::Audible ||
+        classifyNoiseTier(59.99f) != NoiseTier::Audible ||
+        classifyNoiseTier(60.0f) != NoiseTier::Loud ||
+        classifyNoiseTier(84.99f) != NoiseTier::Loud ||
+        classifyNoiseTier(85.0f) != NoiseTier::Scream ||
+        classifyNoiseTier(100.0f) != NoiseTier::Scream) {
+        std::cerr << "[SelfTest] FAIL: Exact NoiseTier boundary intervals [0,30], (30,60), [60,85), [85,100] violated.\n";
+        return 1;
+    }
+
     float noise = 0.0f;
     noise = applyNoiseAction(noise, NoiseAction::StepSneak, 1.0f);       // 0 + 2 = 2
     if (!approxEqual(noise, 2.0f) || classifyNoiseTier(noise) != NoiseTier::Quiet) {
@@ -323,7 +335,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Scream tier should lock enemy into PursuePlayer at 100 suspicion.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [11/12]: Noise Meter action deltas (+2/+8/+25/+12/+30/+15/+10/-10) & NoiseTier AI responses verified.\n";
+    std::cout << "[SelfTest] PASS [11/13]: Noise Meter action deltas (+2/+8/+25/+12/+30/+15/+10/-10) & exact NoiseTier boundaries verified.\n";
 
     // 12. BLOCK 1.3 & 1.4: Cross-Room Sound Propagation (50% attenuation per open door), Closed-Door Blocking, & Ghost Clear
     Labyrinth noiseLab;
@@ -367,9 +379,168 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Non-Ghost Clear (peak 45 > 30) expected 20 shards, got " << loudShards << ".\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [12/12]: Cross-room 50% noise propagation, closed-door blocking, & Ghost Clear (x1.5 Shards) verified.\n";
+    std::cout << "[SelfTest] PASS [12/13]: Cross-room 50% noise propagation, closed-door blocking, & Ghost Clear (x1.5 Shards) verified." << std::endl;
 
-    std::cout << "[SelfTest] ALL 12 ECHOLABYRINTH 5.0 (PHASE A) NATIVE C++17 VERIFICATION SUITES PASSED SUCCESSFULLY.\n";
+    // 13. BLOCK 1 END-TO-END INTEGRATION SUITE:
+    //     (a) Ghost Clear after loud noise in previous room (m_roomPeakNoise reset to 0 on room transition),
+    //     (b) Neighboring room enemy alert reaction to cross-room leaked noise,
+    //     (c) Enemy intrusion into cleared room on loud noise, and
+    //     (d) Anti-infinite-respawn guard (reopenRoomForNoiseIntrusion consumed once per room).
+    Game simGame(exeDir);
+    simGame.startNewGame(0xCAFE1234u);
+
+    // Find an uncleared combat room adjacent to Start (room 0) or along the graph
+    int adjCombatRoomId = -1;
+    for (int d = 0; d < 4; ++d) {
+        const int nb = simGame.m_labyrinth.roomAt(0).neighbors[static_cast<std::size_t>(d)];
+        if (nb >= 0) {
+            const auto& nbRoom = simGame.m_labyrinth.roomAt(static_cast<std::size_t>(nb));
+            if (!nbRoom.cleared && !nbRoom.enemySpawns.empty()) {
+                adjCombatRoomId = nb;
+                break;
+            }
+        }
+    }
+    if (adjCombatRoomId == -1) {
+        for (std::size_t i = 1; i < simGame.m_labyrinth.roomCount(); ++i) {
+            const auto& rm = simGame.m_labyrinth.roomAt(i);
+            if (!rm.cleared && !rm.enemySpawns.empty() && rm.totalWaves == 1) {
+                adjCombatRoomId = static_cast<int>(i);
+                break;
+            }
+        }
+    }
+    if (adjCombatRoomId == -1) {
+        std::cerr << "[SelfTest] FAIL: Could not find combat room for Block 1 integration test.\n";
+        return 1;
+    }
+
+    // (a) Raise noise in room 0 to 80.0 (Loud), then transition into adjCombatRoomId.
+    // Verify that m_roomPeakNoise is initialized to 0.0f on entry so prior room noise does not ruin Ghost Clear,
+    // and that cross-room leaked noise (80 * 0.5 = 40 > 30) alerted the neighboring room's enemies upon entry!
+    simGame.m_noiseLevel = 80.0f;
+    simGame.m_roomPeakNoise = 80.0f;
+    simGame.updateNoiseSystem(cfg::kFixedTimeStep);
+
+    // If adjCombatRoomId is directly connected to room 0, verify pendingNoiseAlertLevel was recorded (> 30)
+    bool isDirectNeighborOfStart = false;
+    for (int d = 0; d < 4; ++d) {
+        if (simGame.m_labyrinth.roomAt(0).neighbors[static_cast<std::size_t>(d)] == adjCombatRoomId) {
+            isDirectNeighborOfStart = true;
+            break;
+        }
+    }
+    if (isDirectNeighborOfStart) {
+        if (simGame.m_labyrinth.roomAt(static_cast<std::size_t>(adjCombatRoomId)).pendingNoiseAlertLevel <= cfg::noise::kThresholdAudible) {
+            std::cerr << "[SelfTest] FAIL: Cross-room noise from room 0 did not record pendingNoiseAlertLevel on adjacent room.\n";
+            return 1;
+        }
+    }
+
+    // Enter adjCombatRoomId as a room transition
+    simGame.enterRoom(adjCombatRoomId, simGame.m_labyrinth.roomAt(static_cast<std::size_t>(adjCombatRoomId)).playerDefaultSpawn, true);
+    if (!approxEqual(simGame.m_roomPeakNoise, 0.0f)) {
+        std::cerr << "[SelfTest] FAIL: m_roomPeakNoise was not reset to 0.0f on room entry (got "
+                  << simGame.m_roomPeakNoise << ").\n";
+        return 1;
+    }
+    if (isDirectNeighborOfStart && !simGame.m_enemies.empty()) {
+        if (simGame.m_enemies.front().state() == EnemyState::Patrol) {
+            std::cerr << "[SelfTest] FAIL: Enemy in adjacent room did not transition out of Patrol after cross-room noise leak.\n";
+            return 1;
+        }
+    }
+
+    // Now let noise decay to 0 while silent, then defeat the room's enemies while keeping m_roomPeakNoise <= 30.0f
+    simGame.m_noiseLevel = 0.0f;
+    simGame.m_roomPeakNoise = 0.0f;
+    const int shardsBeforeClear = simGame.m_player.echoShards();
+    const int expectedBaseShards = simGame.m_labyrinth.currentRoom().shardReward;
+
+    // Emit a single quiet ping (+12 noise <= 30) and lethal acoustic damage to clear the room stealthily
+    simGame.registerNoiseAction(NoiseAction::DirectionalPing, 1.0f, simGame.m_player.position());
+    if (simGame.m_roomPeakNoise > cfg::noise::kThresholdAudible) {
+        std::cerr << "[SelfTest] FAIL: Single ping exceeded Ghost Clear threshold.\n";
+        return 1;
+    }
+    for (auto& enemy : simGame.m_enemies) {
+        if (enemy.isActive()) {
+            // Deal fatal damage on the final sonar impact (+10 combat hit -> 22 peak noise <= 30)
+            const sf::Vector2f ePos = enemy.position();
+            simGame.m_acoustics.emitPulse(ePos - sf::Vector2f{20.0f, 0.0f}, 480.0f, 500.0f, 25.0f, 96, WaveSignature::DirectionalPing, 0.0f, 1.2f, true);
+        }
+    }
+    for (int step = 0; step < 15 && !simGame.m_labyrinth.currentRoom().cleared; ++step) {
+        simGame.updatePlaying(cfg::kFixedTimeStep);
+    }
+    if (!simGame.m_labyrinth.currentRoom().cleared || !simGame.m_labyrinth.currentRoom().ghostCleared ||
+        simGame.m_ghostClearsThisRun < 1 || !simGame.m_player.hasRelic(RelicId::SilentStep)) {
+        std::cerr << "[SelfTest] FAIL: Ghost Clear was not awarded after transitioning from a noisy previous room.\n";
+        return 1;
+    }
+    const int expectedGhostShards = static_cast<int>(std::round(static_cast<float>(expectedBaseShards) * cfg::noise::kGhostClearShardMultiplier));
+    if (simGame.m_player.echoShards() != shardsBeforeClear + expectedGhostShards) {
+        std::cerr << "[SelfTest] FAIL: Ghost Clear shard bonus mismatch (expected +" << expectedGhostShards
+                  << ", got +" << (simGame.m_player.echoShards() - shardsBeforeClear) << ").\n";
+        return 1;
+    }
+
+    // (c) & (d) Test enemy intrusion into a cleared room with an uncleared neighbor, and verify anti-infinite-respawn guard
+    int clearedHostRoom = -1;
+    for (std::size_t i = 1; i < simGame.m_labyrinth.roomCount(); ++i) {
+        const auto& rm = simGame.m_labyrinth.roomAt(i);
+        if (rm.type != RoomType::Start && rm.type != RoomType::Sanctuary && rm.type != RoomType::FinalExit) {
+            for (int d = 0; d < 4; ++d) {
+                const int nb = rm.neighbors[static_cast<std::size_t>(d)];
+                if (nb >= 0) {
+                    const auto& nbRm = simGame.m_labyrinth.roomAt(static_cast<std::size_t>(nb));
+                    if (!nbRm.cleared && !nbRm.enemySpawns.empty()) {
+                        clearedHostRoom = static_cast<int>(i);
+                        break;
+                    }
+                }
+            }
+        }
+        if (clearedHostRoom != -1) break;
+    }
+    if (clearedHostRoom == -1) {
+        std::cerr << "[SelfTest] FAIL: Could not find a host room adjacent to an uncleared combat room.\n";
+        return 1;
+    }
+
+    simGame.m_labyrinth.markRoomCleared(clearedHostRoom);
+    simGame.enterRoom(clearedHostRoom, {640.0f, 400.0f}, true);
+    simGame.m_enemies.clear();
+    simGame.m_noiseIntrusionCooldown = 0.0f;
+    simGame.m_noiseLevel = 90.0f; // Scream tier -> leaks 45.0 (> 30) through open doorway
+    simGame.updateNoiseSystem(cfg::kFixedTimeStep);
+
+    if (simGame.m_enemies.size() != 1 || simGame.m_labyrinth.currentRoom().cleared ||
+        !simGame.m_labyrinth.currentRoom().combatLocked || !simGame.m_labyrinth.currentRoom().noiseIntrusionActive) {
+        std::cerr << "[SelfTest] FAIL: Loud/Scream noise in cleared room did not trigger neighbor enemy intrusion.\n";
+        return 1;
+    }
+
+    // Re-clear the room after defeating the intruder, then make 95 noise again with 0 cooldown:
+    // verify that noiseIntrusionConsumed prevents a second infinite respawn in the same room!
+    simGame.m_enemies.clear();
+    simGame.m_labyrinth.markRoomCleared(clearedHostRoom);
+    simGame.m_noiseIntrusionCooldown = 0.0f;
+    simGame.m_noiseLevel = 95.0f;
+    simGame.updateNoiseSystem(cfg::kFixedTimeStep);
+
+    if (!simGame.m_enemies.empty() || !simGame.m_labyrinth.currentRoom().cleared ||
+        simGame.m_labyrinth.reopenRoomForNoiseIntrusion(clearedHostRoom)) {
+        std::cerr << "[SelfTest] FAIL: Anti-infinite-respawn guard failed; room allowed repeated noise intrusions.\n";
+        return 1;
+    }
+
+    // Clean up any checkpoint file created during simulation test
+    std::remove(simGame.m_saveFilePath.c_str());
+
+    std::cout << "[SelfTest] PASS [13/13]: End-to-end Ghost Clear after room transition, cross-room AI alert, enemy intrusion, & anti-respawn guard verified.\n";
+
+    std::cout << "[SelfTest] ALL 13 ECHOLABYRINTH 5.0 (PHASE A) NATIVE C++17 VERIFICATION SUITES PASSED SUCCESSFULLY.\n";
     return 0;
 }
 

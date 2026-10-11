@@ -26,7 +26,7 @@ jobs:
       - name: Build EchoLabyrinth_SFML (Zero Warnings Check)
         run: cmake --build build -j4
 
-      - name: Run 12-Suite Deterministic Self-Test
+      - name: Run 13-Suite Deterministic Self-Test
         run: ./build/EchoLabyrinth_SFML --self-test
 
   windows-msvc:
@@ -42,5 +42,5 @@ jobs:
       - name: Build EchoLabyrinth_SFML (Release x64)
         run: cmake --build build --config Release --parallel 4
 
-      - name: Run 12-Suite Deterministic Self-Test
+      - name: Run 13-Suite Deterministic Self-Test
         run: .\build\Release\EchoLabyrinth_SFML.exe --self-test

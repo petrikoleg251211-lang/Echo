@@ -898,6 +898,8 @@ void Labyrinth::markRoomCleared(int roomId) noexcept {
     auto& room = m_rooms[static_cast<std::size_t>(roomId)];
     room.cleared = true;
     room.combatLocked = false;
+    room.noiseIntrusionActive = false;
+    room.pendingNoiseAlertLevel = 0.0f;
     if (std::find(m_clearedRooms.begin(), m_clearedRooms.end(), roomId) == m_clearedRooms.end()) {
         m_clearedRooms.push_back(roomId);
     }
@@ -981,15 +983,21 @@ std::vector<RoomNoiseLeak> Labyrinth::propagateNoiseFromRoom(
     return leaks;
 }
 
-void Labyrinth::reopenRoomForNoiseIntrusion(int roomId) noexcept {
-    if (roomId < 0 || static_cast<std::size_t>(roomId) >= m_rooms.size()) return;
+bool Labyrinth::reopenRoomForNoiseIntrusion(int roomId) noexcept {
+    if (roomId < 0 || static_cast<std::size_t>(roomId) >= m_rooms.size()) return false;
     auto& room = m_rooms[static_cast<std::size_t>(roomId)];
+    if (room.noiseIntrusionConsumed || room.noiseIntrusionActive || !room.cleared) {
+        return false;
+    }
     room.cleared = false;
+    room.noiseIntrusionActive = true;
+    room.noiseIntrusionConsumed = true;
     m_clearedRooms.erase(
         std::remove(m_clearedRooms.begin(), m_clearedRooms.end(), roomId),
         m_clearedRooms.end()
     );
     setCombatLock(roomId, true);
+    return true;
 }
 
 int Labyrinth::computeClearShardReward(int baseShards, float roomPeakNoise, bool& outIsGhostClear) noexcept {

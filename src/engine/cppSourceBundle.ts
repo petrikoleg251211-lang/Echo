@@ -60,7 +60,7 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: '.github/workflows/ci.yml',
     module: 'CI',
-    summary: 'GitHub Actions CI (Windows MSVC + Ubuntu GCC): компіляція без попереджень та запуск 12 тестів --self-test',
+    summary: 'GitHub Actions CI (Windows MSVC + Ubuntu GCC): компіляція без попереджень та запуск 13 тестів --self-test',
     content: ciWorkflowRaw,
   },
   {
@@ -258,7 +258,7 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/src/GameSelfTest.cpp',
     module: 'Source',
-    summary: 'Модуль автоматичної верифікації (~320 рядків): 12 детермінованих тестів --self-test (включно з Блоком 1)',
+    summary: 'Модуль автоматичної верифікації (~548 рядків): 13 детермінованих тестів --self-test (включно з інтеграційними тестами Блоку 1)',
     content: gameSelfTestCppRaw,
   },
 ];

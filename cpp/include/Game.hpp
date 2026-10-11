@@ -15,6 +15,7 @@
 #include <SFML/Window/Keyboard.hpp>
 #include <SFML/Window/Mouse.hpp>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -87,12 +88,12 @@ private:
     std::string m_exeDir;
     std::string m_saveFilePath;
 
-    sf::RenderWindow m_window;
+    std::unique_ptr<sf::RenderWindow> m_window;
     sf::View m_worldView;
 
     AssetManager m_assets;
     AcousticSystem m_acoustics;
-    AudioManager m_audio;
+    std::unique_ptr<AudioManager> m_audio;
     UiRenderer m_ui;
     Labyrinth m_labyrinth;
     Player m_player;

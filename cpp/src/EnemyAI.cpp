@@ -122,11 +122,11 @@ void EnemyAI::applyNoiseTierStimulus(sf::Vector2f stimulusPos, NoiseTier tier) n
 
     switch (tier) {
         case NoiseTier::Quiet:
-            // 0..30: Quiet — enemies remain in their current patrol routine
+            // [0.0, 30.0]: Quiet — enemies remain in their current patrol routine
             break;
 
         case NoiseTier::Audible:
-            // 30..60: Audible — transition from Patrol/ReturnToPatrol to InvestigateSound
+            // (30.0, 60.0): Audible — transition from Patrol/ReturnToPatrol to InvestigateSound
             m_targetPos = stimulusPos;
             m_suspicion = std::max(m_suspicion, 42.0f);
             if (m_state == EnemyState::Patrol || m_state == EnemyState::ReturnToPatrol || m_state == EnemyState::Idle) {
@@ -136,7 +136,7 @@ void EnemyAI::applyNoiseTierStimulus(sf::Vector2f stimulusPos, NoiseTier tier) n
             break;
 
         case NoiseTier::Loud:
-            // 60..85: Loud — enemies move directly toward the sound origin with high suspicion
+            // [60.0, 85.0): Loud — enemies move directly toward the sound origin with high suspicion
             m_targetPos = stimulusPos;
             m_suspicion = std::max(m_suspicion, 72.0f);
             if (m_state != EnemyState::Attack && m_state != EnemyState::PursuePlayer) {
@@ -146,7 +146,7 @@ void EnemyAI::applyNoiseTierStimulus(sf::Vector2f stimulusPos, NoiseTier tier) n
             break;
 
         case NoiseTier::Scream:
-            // 85..100: Scream — priority hunt lock on the player position
+            // [85.0, 100.0]: Scream — priority hunt lock on the player position
             m_targetPos = stimulusPos;
             m_suspicion = 100.0f;
             if (m_state != EnemyState::Attack) {

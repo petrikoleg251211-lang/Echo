@@ -17,7 +17,9 @@ float distSqRender(sf::Vector2f a, sf::Vector2f b) noexcept {
 } // namespace
 
 void Game::render() {
-    m_window.clear(sf::Color(3, 6, 12));
+    if (!m_window) return;
+    auto& win = *m_window;
+    win.clear(sf::Color(3, 6, 12));
 
     sf::View activeView = m_worldView;
     if (m_cameraShakeTimer > 0.0f) {
@@ -27,7 +29,7 @@ void Game::render() {
             std::cos(m_runTimeSec * 48.0f) * mag
         );
     }
-    m_window.setView(activeView);
+    win.setView(activeView);
 
     renderWorld();
 
@@ -45,29 +47,33 @@ void Game::render() {
         renderMenuOverlay();
     }
 
-    m_window.display();
+    win.display();
 }
 
 void Game::renderWorld() {
+    if (!m_window) return;
+    auto& win = *m_window;
     const auto& room = m_labyrinth.currentRoom();
 
     renderSubterraneanProps();
-    m_acoustics.render(m_window, m_ambientVisibility, &room.walls);
+    m_acoustics.render(win, m_ambientVisibility, &room.walls);
     renderInteractiveObjects();
 
     if (m_state == AppState::Playing || m_state == AppState::Paused || m_state == AppState::GameOver) {
         for (const auto& enemy : m_enemies) {
             if (!enemy.isActive()) continue;
             const float enemyVis = m_acoustics.queryIlluminationAt(enemy.position(), m_player.position());
-            enemy.render(m_window, enemyVis, m_player.position(), &m_assets);
+            enemy.render(win, enemyVis, m_player.position(), &m_assets);
         }
-        m_player.render(m_window, &m_assets);
+        m_player.render(win, &m_assets);
     }
 
     renderVignetteAndDust();
 }
 
 void Game::renderSubterraneanProps() {
+    if (!m_window) return;
+    auto& win = *m_window;
     const auto& room = m_labyrinth.currentRoom();
     const sf::Vector2f pPos = m_player.position();
     const float visorBoost = m_player.hasRelic(RelicId::SubharmonicVisor) ? 0.08f : 0.0f;
@@ -86,7 +92,7 @@ void Game::renderSubterraneanProps() {
             pipe[1] = sf::Vertex(prop.endPoint, sf::Color(30, 58, 82, alpha));
             pipe[2] = sf::Vertex(prop.position + sf::Vector2f{0.0f, -4.0f}, sf::Color(56, 189, 248, static_cast<sf::Uint8>(alpha / 2)));
             pipe[3] = sf::Vertex(prop.endPoint + sf::Vector2f{0.0f, -4.0f}, sf::Color(56, 189, 248, static_cast<sf::Uint8>(alpha / 2)));
-            m_window.draw(pipe);
+            win.draw(pipe);
         } else if (prop.type == PropType::WaterPuddle) {
             sf::CircleShape puddle(prop.scale);
             puddle.setOrigin(prop.scale, prop.scale);
@@ -95,11 +101,11 @@ void Game::renderSubterraneanProps() {
             puddle.setFillColor(sf::Color(12, 42, 54, static_cast<sf::Uint8>(alpha * 0.45f)));
             puddle.setOutlineThickness(1.0f);
             puddle.setOutlineColor(sf::Color(45, 212, 191, static_cast<sf::Uint8>(alpha * 0.65f)));
-            m_window.draw(puddle);
+            win.draw(puddle);
         } else if (prop.type == PropType::VentTurbine) {
             const float rad = prop.rotationDeg * 0.01745329f;
             m_assets.renderMesh25D(
-                m_window,
+                win,
                 ModelId::VentTurbine,
                 prop.position,
                 rad,
@@ -115,12 +121,14 @@ void Game::renderSubterraneanProps() {
             glow.setOrigin(glow.getRadius(), glow.getRadius());
             glow.setPosition(prop.position);
             glow.setFillColor(sf::Color(52, 211, 153, static_cast<sf::Uint8>(30.0f + pulse * 45.0f)));
-            m_window.draw(glow);
+            win.draw(glow);
         }
     }
 }
 
 void Game::renderInteractiveObjects() {
+    if (!m_window) return;
+    auto& win = *m_window;
     const auto& room = m_labyrinth.currentRoom();
     const sf::Vector2f pPos = m_player.position();
     const float visorBoost = m_player.hasRelic(RelicId::SubharmonicVisor) ? 0.10f : 0.0f;
@@ -149,14 +157,14 @@ void Game::renderInteractiveObjects() {
         ring.setFillColor(sf::Color(col.r, col.g, col.b, static_cast<sf::Uint8>(vis * 38.0f)));
         ring.setOutlineThickness(2.0f);
         ring.setOutlineColor(col);
-        m_window.draw(ring);
+        win.draw(ring);
 
         if (vis > 0.35f) {
             const float labelY = (portal.direction == CardinalDir::North)
                 ? (portal.position.y + portal.radius + 8.0f)
                 : (portal.position.y - portal.radius - 18.0f);
             m_ui.drawText(
-                m_window,
+                win,
                 unlocked ? portal.label : ("SEALED: " + portal.label),
                 {portal.position.x, labelY},
                 10.0f,
@@ -180,10 +188,10 @@ void Game::renderInteractiveObjects() {
         aura.setFillColor(sf::Color(spec.tint.r, spec.tint.g, spec.tint.b, static_cast<sf::Uint8>(vis * 55.0f)));
         aura.setOutlineThickness(1.8f);
         aura.setOutlineColor(sf::Color(spec.tint.r, spec.tint.g, spec.tint.b, alpha));
-        m_window.draw(aura);
+        win.draw(aura);
 
         m_assets.renderMesh25D(
-            m_window,
+            win,
             ModelId::ResonatorCrystal,
             ped.position,
             m_runTimeSec * 1.8f,
@@ -199,9 +207,9 @@ void Game::renderInteractiveObjects() {
         if (ped.costShards > 0) {
             label += " (" + std::to_string(ped.costShards) + " SHARDS)";
         }
-        m_ui.drawText(m_window, label, {ped.position.x, ped.position.y - 34.0f}, 10.5f, spec.tint, TextAlign::Center, true);
+        m_ui.drawText(win, label, {ped.position.x, ped.position.y - 34.0f}, 10.5f, spec.tint, TextAlign::Center, true);
         if (distSqRender(pPos, ped.position) <= 85.0f * 85.0f) {
-            m_ui.drawText(m_window, spec.effectSummary, {ped.position.x, ped.position.y + 24.0f}, 9.5f, sf::Color(224, 242, 254), TextAlign::Center);
+            m_ui.drawText(win, spec.effectSummary, {ped.position.x, ped.position.y + 24.0f}, 9.5f, sf::Color(224, 242, 254), TextAlign::Center);
         }
     }
 
@@ -213,7 +221,7 @@ void Game::renderInteractiveObjects() {
         const sf::Color col(250, 204, 21, alpha);
 
         m_assets.renderMesh25D(
-            m_window,
+            win,
             ModelId::SurveyorTerminal,
             offer.position,
             0.0f,
@@ -225,7 +233,7 @@ void Game::renderInteractiveObjects() {
             0.08f
         );
         const std::string tag = "[F] " + offer.label + " (" + std::to_string(offer.costShards) + " SHARDS)";
-        m_ui.drawText(m_window, tag, {offer.position.x, offer.position.y - 30.0f}, 10.0f, col, TextAlign::Center);
+        m_ui.drawText(win, tag, {offer.position.x, offer.position.y - 30.0f}, 10.0f, col, TextAlign::Center);
     }
 
     // 4. Render Interactive Mechanisms
@@ -240,7 +248,7 @@ void Game::renderInteractiveObjects() {
 
         const float leverTilt = (mech.animProgress - 0.5f) * 0.55f;
         m_assets.renderMesh25D(
-            m_window,
+            win,
             ModelId::HarmonicLever,
             mech.position,
             0.0f,
@@ -254,7 +262,7 @@ void Game::renderInteractiveObjects() {
 
         if (distSqRender(pPos, mech.position) <= 68.0f * 68.0f || vis > 0.45f) {
             m_ui.drawText(
-                m_window,
+                win,
                 mech.activated ? "ENGAGED" : ("[F] " + mech.label),
                 {mech.position.x, mech.position.y - 26.0f},
                 10.5f,
@@ -278,10 +286,10 @@ void Game::renderInteractiveObjects() {
         ring.setFillColor(sf::Color(col.r, col.g, col.b, static_cast<sf::Uint8>(25.0f + res.energy * 90.0f)));
         ring.setOutlineThickness(2.0f);
         ring.setOutlineColor(col);
-        m_window.draw(ring);
+        win.draw(ring);
 
         m_assets.renderMesh25D(
-            m_window,
+            win,
             ModelId::ResonatorCrystal,
             res.position,
             m_runTimeSec * (res.activated ? 2.6f : 1.1f),
@@ -298,7 +306,7 @@ void Game::renderInteractiveObjects() {
             const std::string status = res.activated
                 ? "RESONATOR LOCKED (100%)"
                 : ("PING CRYSTAL (" + std::to_string(pct) + "%)");
-            m_ui.drawText(m_window, status, {res.position.x, res.position.y - 28.0f}, 10.5f, col, TextAlign::Center);
+            m_ui.drawText(win, status, {res.position.x, res.position.y - 28.0f}, 10.5f, col, TextAlign::Center);
         }
     }
 
@@ -314,7 +322,7 @@ void Game::renderInteractiveObjects() {
         zone.setFillColor(sf::Color(120, 53, 15, static_cast<sf::Uint8>(vis * 35.0f)));
         zone.setOutlineThickness(1.5f);
         zone.setOutlineColor(sf::Color(251, 146, 60, alpha));
-        m_window.draw(zone);
+        win.draw(zone);
     }
 
     // 7. Render Surveyor Log Terminals
@@ -327,7 +335,7 @@ void Game::renderInteractiveObjects() {
         const sf::Color col(56, 189, 248, alpha);
 
         m_assets.renderMesh25D(
-            m_window,
+            win,
             ModelId::SurveyorTerminal,
             lore.position,
             0.0f,
@@ -341,7 +349,7 @@ void Game::renderInteractiveObjects() {
 
         if (distSqRender(pPos, lore.position) <= 68.0f * 68.0f || vis > 0.45f) {
             m_ui.drawText(
-                m_window,
+                win,
                 "[F] " + lore.title,
                 {lore.position.x, lore.position.y - 24.0f},
                 10.5f,
@@ -353,6 +361,8 @@ void Game::renderInteractiveObjects() {
 }
 
 void Game::renderVignetteAndDust() {
+    if (!m_window) return;
+    auto& win = *m_window;
     sf::VertexArray dust(sf::Quads);
     const sf::Vector2f pPos = m_player.position();
     for (const auto& pt : m_particles) {
@@ -365,7 +375,7 @@ void Game::renderVignetteAndDust() {
         dust.append(sf::Vertex({pt.pos.x + s, pt.pos.y + s}, c));
         dust.append(sf::Vertex({pt.pos.x - s, pt.pos.y + s}, c));
     }
-    m_window.draw(dust);
+    win.draw(dust);
 }
 
 } // namespace echo

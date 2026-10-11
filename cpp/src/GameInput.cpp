@@ -61,14 +61,14 @@ void Game::rebuildMenuButtons() {
 
 void Game::executeMenuSelection(std::size_t index) {
     if (index >= m_menuButtons.size() || !m_menuButtons[index].enabled) return;
-    m_audio.playEffect(SoundEffectId::UiSelect, 0.8f, 1.0f);
+    if (m_audio) m_audio->playEffect(SoundEffectId::UiSelect, 0.8f, 1.0f);
 
     if (m_state == AppState::MainMenu) {
         if (index == 0) startNewGame();
         else if (index == 1) loadCheckpoint();
         else if (index == 2) { m_previousState = AppState::MainMenu; m_state = AppState::Settings; rebuildMenuButtons(); }
         else if (index == 3) { m_previousState = AppState::MainMenu; m_state = AppState::Controls; rebuildMenuButtons(); }
-        else if (index == 4) m_window.close();
+        else if (index == 4) { if (m_window) m_window->close(); }
     } else if (m_state == AppState::Paused) {
         if (index == 0) m_state = AppState::Playing;
         else if (index == 1) {
@@ -91,22 +91,22 @@ void Game::executeMenuSelection(std::size_t index) {
             rebuildMenuButtons();
         }
     } else if (m_state == AppState::Settings) {
-        if (index == 0) {
-            float v = m_audio.masterVolume() + 20.0f;
+        if (index == 0 && m_audio) {
+            float v = m_audio->masterVolume() + 20.0f;
             if (v > 100.0f) v = 0.0f;
-            m_audio.setMasterVolume(v);
-        } else if (index == 1) {
-            float v = m_audio.musicVolume() + 25.0f;
+            m_audio->setMasterVolume(v);
+        } else if (index == 1 && m_audio) {
+            float v = m_audio->musicVolume() + 25.0f;
             if (v > 100.0f) v = 0.0f;
-            m_audio.setMusicVolume(v);
-        } else if (index == 2) {
-            float v = m_audio.sfxVolume() + 25.0f;
+            m_audio->setMusicVolume(v);
+        } else if (index == 2 && m_audio) {
+            float v = m_audio->sfxVolume() + 25.0f;
             if (v > 100.0f) v = 0.0f;
-            m_audio.setSfxVolume(v);
-        } else if (index == 3) {
-            float v = m_audio.ambientVolume() + 25.0f;
+            m_audio->setSfxVolume(v);
+        } else if (index == 3 && m_audio) {
+            float v = m_audio->ambientVolume() + 25.0f;
             if (v > 100.0f) v = 0.0f;
-            m_audio.setAmbientVolume(v);
+            m_audio->setAmbientVolume(v);
         } else if (index == 4) {
             float s = m_acoustics.rayDensityScale() + 0.25f;
             if (s > 1.75f) s = 0.5f;
@@ -140,19 +140,20 @@ void Game::executeMenuSelection(std::size_t index) {
 }
 
 void Game::handleEvents() {
+    if (!m_window) return;
     sf::Event ev{};
-    while (m_window.pollEvent(ev)) {
+    while (m_window->pollEvent(ev)) {
         if (ev.type == sf::Event::Closed) {
-            m_window.close();
+            m_window->close();
         } else if (ev.type == sf::Event::Resized) {
             updateLetterboxView(ev.size.width, ev.size.height);
         } else if (ev.type == sf::Event::KeyPressed) {
             handleKeyPressed(ev.key.code);
         } else if (ev.type == sf::Event::MouseMoved) {
-            const sf::Vector2f worldPt = m_window.mapPixelToCoords({ev.mouseMove.x, ev.mouseMove.y}, m_worldView);
+            const sf::Vector2f worldPt = m_window->mapPixelToCoords({ev.mouseMove.x, ev.mouseMove.y}, m_worldView);
             handleMouseMoved(worldPt);
         } else if (ev.type == sf::Event::MouseButtonPressed) {
-            const sf::Vector2f worldPt = m_window.mapPixelToCoords({ev.mouseButton.x, ev.mouseButton.y}, m_worldView);
+            const sf::Vector2f worldPt = m_window->mapPixelToCoords({ev.mouseButton.x, ev.mouseButton.y}, m_worldView);
             handleMousePressed(ev.mouseButton.button, worldPt);
         }
     }
@@ -172,17 +173,17 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
         }
         if (key == sf::Keyboard::Tab || key == sf::Keyboard::M) {
             m_showMinimap = !m_showMinimap;
-            m_audio.playEffect(SoundEffectId::UiMove, 0.7f, 1.1f);
+            if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.7f, 1.1f);
             return;
         }
         if (key == sf::Keyboard::Space) {
             if (m_player.triggerRadialPulse(m_acoustics)) {
-                m_audio.playWaveSignature(WaveSignature::RadialPulse);
+                if (m_audio) m_audio->playWaveSignature(WaveSignature::RadialPulse);
                 registerNoiseAction(NoiseAction::RadialPulse, 1.0f, m_player.position());
             }
         } else if (key == sf::Keyboard::E) {
             if (m_player.triggerDirectionalPing(m_mouseWorldPos, m_acoustics)) {
-                m_audio.playWaveSignature(WaveSignature::DirectionalPing);
+                if (m_audio) m_audio->playWaveSignature(WaveSignature::DirectionalPing);
                 registerNoiseAction(NoiseAction::DirectionalPing, 1.0f, m_player.position());
             }
         } else if (key == sf::Keyboard::G) {
@@ -193,7 +194,7 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
             saveCheckpoint();
             m_statusBannerText = "CHECKPOINT SAVED [F5]";
             m_statusBannerTimer = 2.5f;
-            m_audio.playEffect(SoundEffectId::UiSelect, 0.8f, 1.2f);
+            if (m_audio) m_audio->playEffect(SoundEffectId::UiSelect, 0.8f, 1.2f);
         } else if (key == sf::Keyboard::F9) {
             loadCheckpoint();
         }
@@ -213,12 +214,12 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
     if (key == sf::Keyboard::Up || key == sf::Keyboard::W) {
         if (!m_menuButtons.empty()) {
             m_selectedMenuIndex = (m_selectedMenuIndex + m_menuButtons.size() - 1) % m_menuButtons.size();
-            m_audio.playEffect(SoundEffectId::UiMove, 0.6f, 1.0f);
+            if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.6f, 1.0f);
         }
     } else if (key == sf::Keyboard::Down || key == sf::Keyboard::S) {
         if (!m_menuButtons.empty()) {
             m_selectedMenuIndex = (m_selectedMenuIndex + 1) % m_menuButtons.size();
-            m_audio.playEffect(SoundEffectId::UiMove, 0.6f, 1.0f);
+            if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.6f, 1.0f);
         }
     } else if (key == sf::Keyboard::Enter || key == sf::Keyboard::Space) {
         executeMenuSelection(m_selectedMenuIndex);
@@ -232,7 +233,7 @@ void Game::handleMouseMoved(sf::Vector2f worldPos) {
             if (m_menuButtons[i].enabled && pointInButton(worldPos, m_menuButtons[i])) {
                 if (m_selectedMenuIndex != i) {
                     m_selectedMenuIndex = i;
-                    m_audio.playEffect(SoundEffectId::UiMove, 0.5f, 1.05f);
+                    if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.5f, 1.05f);
                 }
                 break;
             }
@@ -245,7 +246,7 @@ void Game::handleMousePressed(sf::Mouse::Button button, sf::Vector2f worldPos) {
     if (m_state == AppState::Playing) {
         if (button == sf::Mouse::Left) {
             if (m_player.triggerDirectionalPing(worldPos, m_acoustics)) {
-                m_audio.playWaveSignature(WaveSignature::DirectionalPing);
+                if (m_audio) m_audio->playWaveSignature(WaveSignature::DirectionalPing);
                 registerNoiseAction(NoiseAction::DirectionalPing, 1.0f, m_player.position());
             }
         } else if (button == sf::Mouse::Right) {
@@ -283,7 +284,7 @@ void Game::tryInteract() {
                 if (!m_player.spendEchoShards(ped.costShards)) {
                     m_statusBannerText = "INSUFFICIENT ECHO SHARDS (NEED " + std::to_string(ped.costShards) + ")";
                     m_statusBannerTimer = 2.4f;
-                    m_audio.playEffect(SoundEffectId::UiMove, 0.8f, 0.7f);
+                    if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.8f, 0.7f);
                     return;
                 }
             }
@@ -292,7 +293,7 @@ void Game::tryInteract() {
             if (ped.relicId == RelicId::SubharmonicVisor) {
                 m_labyrinth.revealSecretRoomsOnMap();
             }
-            m_audio.playEffect(SoundEffectId::VictoryChord, 0.85f, 1.15f);
+            if (m_audio) m_audio->playEffect(SoundEffectId::VictoryChord, 0.85f, 1.15f);
             m_acoustics.emitPulse(ped.position, 420.0f, 520.0f, 1.15f, 96, WaveSignature::ResonatorHum, 0.0f, 6.2831853f, true);
             m_statusBannerText = std::string("RELIC ACQUIRED: ") + spec.name + " (" + spec.effectSummary + ")";
             m_statusBannerTimer = 4.2f;
@@ -307,13 +308,13 @@ void Game::tryInteract() {
             if (!m_player.spendEchoShards(offer.costShards)) {
                 m_statusBannerText = "INSUFFICIENT ECHO SHARDS (NEED " + std::to_string(offer.costShards) + ")";
                 m_statusBannerTimer = 2.4f;
-                m_audio.playEffect(SoundEffectId::UiMove, 0.8f, 0.7f);
+                if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.8f, 0.7f);
                 return;
             }
             offer.purchased = true;
             if (offer.healAmount > 0) m_player.heal(offer.healAmount);
             if (offer.decoyAmount > 0) m_player.addDecoy(offer.decoyAmount);
-            m_audio.playEffect(SoundEffectId::LorePickup, 0.95f, 1.1f);
+            if (m_audio) m_audio->playEffect(SoundEffectId::LorePickup, 0.95f, 1.1f);
             m_statusBannerText = "PURCHASED: " + offer.label;
             m_statusBannerTimer = 3.0f;
             return;
@@ -329,7 +330,7 @@ void Game::tryInteract() {
                 m_player.restoreStamina(100.0f);
                 m_noiseLevel = 0.0f;
                 saveCheckpoint();
-                m_audio.playEffect(SoundEffectId::ResonatorHum, 0.95f, 1.0f);
+                if (m_audio) m_audio->playEffect(SoundEffectId::ResonatorHum, 0.95f, 1.0f);
                 m_acoustics.emitPulse(mech.position, 410.0f, 540.0f, 1.15f, 96, WaveSignature::ResonatorHum, 0.0f, 6.2831853f, true);
                 m_statusBannerText = "SANCTUARY SHRINE ACTIVATED: +2 HULL, NOISE RESET, & CHECKPOINT SAVED";
                 m_statusBannerTimer = 3.5f;
@@ -348,8 +349,10 @@ void Game::tryInteract() {
                 6.2831853f,
                 true
             );
-            m_audio.playSpatial(SoundEffectId::SwitchClunk, mech.position, 1.0f, 1.0f, 1.0f);
-            m_audio.playSpatial(SoundEffectId::GateSlideOpen, {1045.0f, 400.0f}, 0.85f, 0.95f, 0.92f);
+            if (m_audio) {
+                m_audio->playSpatial(SoundEffectId::SwitchClunk, mech.position, 1.0f, 1.0f, 1.0f);
+                m_audio->playSpatial(SoundEffectId::GateSlideOpen, {1045.0f, 400.0f}, 0.85f, 0.95f, 0.92f);
+            }
             m_statusBannerText = mech.label + " ENGAGED — RESONANCE BARRIER UNSEALED";
             m_statusBannerTimer = 3.5f;
             return;
@@ -365,7 +368,7 @@ void Game::tryInteract() {
             m_activeLoreTitle = lore.title;
             m_activeLoreBody = lore.excerpt;
             m_loreDisplayTimer = 7.5f;
-            m_audio.playEffect(SoundEffectId::LorePickup, 0.9f, 1.0f);
+            if (m_audio) m_audio->playEffect(SoundEffectId::LorePickup, 0.9f, 1.0f);
             m_statusBannerText = "LOG RECOVERED: " + lore.title + " (+1 DECOY, +10 SHARDS)";
             m_statusBannerTimer = 3.2f;
             return;

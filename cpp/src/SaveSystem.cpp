@@ -287,7 +287,7 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
         } else if (key == "relics") {
             int val = 0;
             while (iss >> val && parsed.collectedRelics.size() < 16) {
-                if (val >= 0 && val < 8) {
+                if (val >= 0 && val < 10) {
                     if (std::find(parsed.collectedRelics.begin(), parsed.collectedRelics.end(), val) == parsed.collectedRelics.end()) {
                         parsed.collectedRelics.push_back(val);
                     }

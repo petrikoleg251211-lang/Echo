@@ -11,26 +11,18 @@
 namespace echo {
 
 enum class EnemyVariant : std::uint8_t {
-    Stalker = 0,     // Agile arachnid acoustic hunter
-    Warden = 1,      // Heavy armored juggernaut (frontal resistance, wide tremor)
-    Shrieker = 2,    // Crystalline sonic turret that fires ranged dissonant bolts at sounds
-    Phantom = 3,     // Cloaked phase hunter; vulnerable when illuminated by reflected echoes
-    AbyssalBoss = 4  // The Choir Sovereign: multi-phase acoustic apex boss
+    Stalker = 0,     // Standard Acoustic Hunter (balanced speed, investigates sounds)
+    Warden = 1,      // Heavy Armored Warden (slow, high HP, emits periodic floor tremors)
+    Shrieker = 2,    // Fast Sonic Shrieker (high sensitivity, fires ranged SonicBolts)
+    Phantom = 3,     // Phase Phantom (fast, takes bonus damage from reflected sonar rays)
+    AbyssalBoss = 4  // The Choir Sovereign (3-phase boss with radial shockwaves & bolt volleys)
 };
 
 enum class PropType : std::uint8_t {
-    VentTurbine = 0,
-    PipeConduit = 1,
-    EmergencyBeacon = 2,
-    WaterPuddle = 3
-};
-
-struct DecoProp {
-    PropType type{PropType::VentTurbine};
-    sf::Vector2f position;
-    sf::Vector2f endPoint; // Used for PipeConduit segments
-    float scale{1.0f};
-    float rotationDeg{0.0f};
+    PipeConduit = 0,
+    WaterPuddle = 1,
+    VentTurbine = 2,
+    EmergencyBeacon = 3
 };
 
 struct RoomPortal {
@@ -39,8 +31,8 @@ struct RoomPortal {
     int targetRoomId{0};
     sf::Vector2f targetSpawnPos;
     std::string label;
-    int requiredSwitchId{-1}; // -1 = unlocked, >= 0 = requires switch, resonator, combat clear, or secret sonar ping
-    CardinalDir direction{CardinalDir::East};
+    int requiredSwitchId{-1}; // -1 = open; 800+roomId = combat lock; 900+roomId = secret wall
+    CardinalDir direction{CardinalDir::North};
     bool isSecretDoor{false};
     bool isVictoryExit{false};
 };
@@ -51,7 +43,7 @@ struct InteractiveMechanism {
     bool activated{false};
     float animProgress{0.0f};
     std::string label;
-    int unlocksDoorId{-1};
+    int targetDoorId{-1};
 };
 
 struct LoreCollectible {
@@ -63,9 +55,9 @@ struct LoreCollectible {
 };
 
 struct RelicPedestal {
-    RelicId relicId{RelicId::FocusedTransducer};
+    RelicId relicId{RelicId::HarmonicAmplifier};
     sf::Vector2f position;
-    int costShards{0}; // 0 = free pedestal reward, > 0 = Shop price in Echo Shards
+    int costShards{0};
     bool collected{false};
 };
 
@@ -73,10 +65,18 @@ struct ShopOffer {
     int id{0};
     sf::Vector2f position;
     std::string label;
-    int costShards{15};
+    int costShards{20};
     int healAmount{0};
     int decoyAmount{0};
     bool purchased{false};
+};
+
+struct DecoProp {
+    PropType type{PropType::PipeConduit};
+    sf::Vector2f position;
+    sf::Vector2f endPoint;
+    float scale{14.0f};
+    float rotationDeg{0.0f};
 };
 
 struct EnemySpawnSpec {
@@ -144,6 +144,10 @@ struct RoomDefinition {
     bool isCheckpoint{false};
     bool isExitRoom{false};
     bool ghostCleared{false};
+    bool noiseIntrusionActive{false};
+    bool noiseIntrusionConsumed{false};
+    CardinalDir pendingNoiseAlertDir{CardinalDir::West};
+    float pendingNoiseAlertLevel{0.0f};
 };
 
 class Labyrinth {
@@ -192,7 +196,7 @@ public:
         float sourceNoise,
         int maxGridSteps = 2
     ) const;
-    void reopenRoomForNoiseIntrusion(int roomId) noexcept;
+    bool reopenRoomForNoiseIntrusion(int roomId) noexcept;
     static int computeClearShardReward(int baseShards, float roomPeakNoise, bool& outIsGhostClear) noexcept;
 
     void activateSwitch(int switchId) noexcept;
@@ -228,8 +232,9 @@ private:
     int m_bossRoomId{0};
     int m_exitRoomId{0};
 
-    std::vector<RoomDefinition> m_rooms;
     std::size_t m_currentRoomIndex{0};
+    float m_animTime{0.0f};
+    std::vector<RoomDefinition> m_rooms;
     std::vector<int> m_activatedSwitches;
     std::vector<int> m_collectedLoreIds;
     std::vector<int> m_visitedRooms;

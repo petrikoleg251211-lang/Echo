@@ -44,6 +44,8 @@ Game::Game(const std::string& exeDir)
         m_metaTotalRuns = existing.totalRuns;
         m_metaTotalVictories = existing.totalVictories;
         m_metaBossesDefeated = existing.bossesDefeated;
+        m_metaTotalGhostClears = existing.metaTotalGhostClears;
+        m_discoveredCodexIds = existing.discoveredCodexIds;
     }
 }
 
@@ -169,6 +171,8 @@ void Game::enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild
     // never disqualifies the player from earning Ghost Clear in the newly entered room!
     m_roomPeakNoise = 0.0f;
     m_noiseIntrusionCooldown = 4.0f;
+    m_echoStormTimer = 0.0f;
+    m_bossDissonanceTimer = 0.0f;
 
     if (!room.cleared && room.noiseIntrusionActive) {
         m_enemies.clear();
@@ -197,7 +201,12 @@ void Game::enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild
             room.pendingNoiseAlertLevel = 0.0f;
         }
         m_labyrinth.setCombatLock(roomId, true);
-        m_statusBannerText = std::string(Labyrinth::roomTypeName(room.type)) + " — KEEP NOISE <= 30 FOR GHOST CLEAR!";
+        m_statusBannerText = std::string(Labyrinth::roomTypeName(room.type));
+        if (room.roomEvent != RoomEvent::None) {
+            m_statusBannerText += " [" + std::string(roomEventName(room.roomEvent)) + "]";
+        } else {
+            m_statusBannerText += " — KEEP NOISE <= 30 FOR GHOST CLEAR!";
+        }
         m_statusBannerTimer = 3.2f;
     } else {
         m_enemies.clear();
@@ -206,7 +215,8 @@ void Game::enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild
         m_statusBannerTimer = 3.0f;
     }
 
-    m_acoustics.emitPulse(spawnPos, 380.0f, 360.0f, 0.72f, 56, WaveSignature::FootstepWalk, 0.0f, 6.2831853f, false);
+    const float entryRange = (room.roomEvent == RoomEvent::AcousticBlackout) ? 200.0f : 360.0f;
+    m_acoustics.emitPulse(spawnPos, 380.0f, entryRange, 0.72f, 56, WaveSignature::FootstepWalk, 0.0f, 6.2831853f, false);
 
     if (room.isCheckpoint) {
         saveCheckpoint();
@@ -225,6 +235,8 @@ void Game::startNewGame(std::uint32_t customSeed) {
     m_roomPeakNoise = 0.0f;
     m_noiseSilenceGraceTimer = 0.0f;
     m_noiseIntrusionCooldown = 0.0f;
+    m_echoStormTimer = 0.0f;
+    m_bossDissonanceTimer = 0.0f;
     m_runTimeSec = 0.0f;
     m_loreDisplayTimer = 0.0f;
     m_showMinimap = false;
@@ -248,7 +260,10 @@ void Game::saveCheckpoint() {
     data.playerMaxHealth = m_player.maxHealth();
     data.playerStamina = m_player.stamina();
     data.decoyCount = m_player.decoyCount();
+    data.echoTrapCount = m_player.echoTrapCount();
+    data.activeFrequency = static_cast<int>(m_player.activeFrequency());
     data.echoShards = m_player.echoShards();
+    data.ghostClearsThisRun = m_ghostClearsThisRun;
 
     data.masterVolume = m_audio ? m_audio->masterVolume() : 80.0f;
     data.musicVolume = m_audio ? m_audio->musicVolume() : 75.0f;
@@ -262,9 +277,16 @@ void Game::saveCheckpoint() {
     data.totalRuns = m_metaTotalRuns;
     data.totalVictories = m_metaTotalVictories;
     data.bossesDefeated = m_metaBossesDefeated;
+    data.metaTotalGhostClears = m_metaTotalGhostClears;
 
     data.activatedSwitches = m_labyrinth.activatedSwitches();
     data.collectedLoreIds = m_labyrinth.collectedLoreIds();
+    data.discoveredCodexIds = m_discoveredCodexIds;
+    for (int id : data.collectedLoreIds) {
+        if (std::find(data.discoveredCodexIds.begin(), data.discoveredCodexIds.end(), id) == data.discoveredCodexIds.end()) {
+            data.discoveredCodexIds.push_back(id);
+        }
+    }
     data.visitedRooms = m_labyrinth.visitedRooms();
     data.clearedRooms = m_labyrinth.clearedRooms();
     for (RelicId r : m_player.relics()) {
@@ -293,6 +315,14 @@ bool Game::loadCheckpoint() {
     m_metaTotalRuns = data.totalRuns;
     m_metaTotalVictories = data.totalVictories;
     m_metaBossesDefeated = data.bossesDefeated;
+    m_metaTotalGhostClears = data.metaTotalGhostClears;
+    m_ghostClearsThisRun = data.ghostClearsThisRun;
+    m_discoveredCodexIds = data.discoveredCodexIds;
+    for (int id : data.collectedLoreIds) {
+        if (std::find(m_discoveredCodexIds.begin(), m_discoveredCodexIds.end(), id) == m_discoveredCodexIds.end()) {
+            m_discoveredCodexIds.push_back(id);
+        }
+    }
 
     m_labyrinth.generateRun(data.runSeed, static_cast<std::size_t>(data.targetRoomCount));
     m_labyrinth.restoreState(
@@ -316,6 +346,8 @@ bool Game::loadCheckpoint() {
     m_player.setHealth(data.playerHealth);
     m_player.setStamina(data.playerStamina);
     m_player.setDecoyCount(data.decoyCount);
+    m_player.setEchoTrapCount(data.echoTrapCount);
+    m_player.setFrequency(static_cast<AcousticFrequency>(std::clamp(data.activeFrequency, 0, 2)), m_acoustics);
     m_player.setEchoShards(data.echoShards);
 
     m_noiseLevel = 0.0f;
@@ -337,6 +369,10 @@ void Game::registerNoiseAction(NoiseAction action, float dt, sf::Vector2f stimul
     if (isFootstep && AcousticSystem::isInDampMossShelter(m_player.position(), room.walls, room.floorMaterial)) {
         mult *= 0.50f;
     }
+    // Block 5.1: ResonanceOvercharge chamber increases noise gain by +20%
+    if (room.roomEvent == RoomEvent::ResonanceOvercharge) {
+        mult *= 1.20f;
+    }
 
     m_noiseLevel = applyNoiseAction(m_noiseLevel, action, dt, mult);
     m_roomPeakNoise = std::max(m_roomPeakNoise, m_noiseLevel);
@@ -350,7 +386,9 @@ void Game::registerNoiseAction(NoiseAction action, float dt, sf::Vector2f stimul
         action == NoiseAction::StompImpact ||
         action == NoiseAction::GlassShatter ||
         action == NoiseAction::WaterSplash ||
-        action == NoiseAction::EchoSwarmAmplify) {
+        action == NoiseAction::EchoSwarmAmplify ||
+        action == NoiseAction::EchoStormPulse ||
+        action == NoiseAction::BossDissonanceShock) {
         m_noiseSilenceGraceTimer = 0.35f;
     }
 
@@ -359,7 +397,8 @@ void Game::registerNoiseAction(NoiseAction action, float dt, sf::Vector2f stimul
          action == NoiseAction::RadialPulse ||
          action == NoiseAction::StompImpact ||
          action == NoiseAction::GlassShatter ||
-         action == NoiseAction::WaterSplash);
+         action == NoiseAction::WaterSplash ||
+         action == NoiseAction::BossDissonanceShock);
 
     const NoiseTier tier = classifyNoiseTier(m_noiseLevel);
     if (tier != NoiseTier::Quiet) {
@@ -432,7 +471,7 @@ void Game::updateNoiseSystem(float dt) {
         registerNoiseAction(stepAct, dt, m_player.position());
     }
 
-    // Silence decay (-10/sec, or -20/sec inside a DampMoss shelter per Block 2.1!)
+    // Silence decay (-10/sec, doubled in DampMoss shelter per Block 2.1, +50% with PhaseDampener relic per Block 5.2)
     if ((!m_player.movedLastFrame() || m_player.activeStance() == MovementStance::Sneak) &&
         m_noiseSilenceGraceTimer <= 0.0f) {
         const auto& curRoom = m_labyrinth.currentRoom();
@@ -441,7 +480,7 @@ void Game::updateNoiseSystem(float dt) {
             curRoom.walls,
             curRoom.floorMaterial
         );
-        const float decayMult = inMossShelter ? 2.0f : 1.0f;
+        const float decayMult = (inMossShelter ? 2.0f : 1.0f) * m_player.silenceDecayMultiplier();
         m_noiseLevel = applyNoiseAction(m_noiseLevel, NoiseAction::SilenceDecay, dt, decayMult);
     }
 
@@ -552,6 +591,17 @@ void Game::updatePlaying(float dt) {
 
     auto& room = m_labyrinth.currentRoomMut();
     m_labyrinth.updateAnimations(dt);
+
+    // Block 5.1: Dynamic RoomEvent — EchoStorm periodic ambient sonar sweep every 3.5s
+    if (room.roomEvent == RoomEvent::EchoStorm && !room.cleared) {
+        m_echoStormTimer += dt;
+        if (m_echoStormTimer >= 3.5f) {
+            m_echoStormTimer = 0.0f;
+            m_acoustics.emitPulse({640.0f, 400.0f}, 440.0f, 700.0f, 0.95f, 96, WaveSignature::ResonatorHum, 0.0f, 6.2831853f, false);
+            registerNoiseAction(NoiseAction::EchoStormPulse, 1.0f, {640.0f, 400.0f});
+            if (m_audio) m_audio->playWaveSignature(WaveSignature::ResonatorHum);
+        }
+    }
 
     WaveSignature emittedSig{};
     if (m_player.update(dt, moveInput, stance, m_mouseWorldPos, room.walls, m_acoustics, emittedSig)) {
@@ -667,11 +717,14 @@ void Game::updatePlaying(float dt) {
         }
     }
 
+    // Block 5.1: ResonanceOvercharge doubles resonator charge rate; AcousticBlackout decays traces faster
+    const float roomChargeScale = (room.roomEvent == RoomEvent::ResonanceOvercharge) ? 2.0f : 1.0f;
+    const float acousticDt = (room.roomEvent == RoomEvent::AcousticBlackout) ? (dt * 1.45f) : dt;
     const std::vector<int> newlyUnlockedBySonar = m_acoustics.update(
-        dt,
+        acousticDt,
         room.walls,
         &room.resonators,
-        m_player.resonatorChargeMultiplier()
+        m_player.resonatorChargeMultiplier() * roomChargeScale
     );
 
     // Block 2.3: Check if any Brittle Glass walls were shattered by high-power sonar rays (+40 noise)
@@ -699,9 +752,10 @@ void Game::updatePlaying(float dt) {
             m_statusBannerTimer = 3.8f;
         } else if (unlockedId < 700) {
             if (room.type == RoomType::Puzzle && room.shardReward > 0) {
-                m_player.addEchoShards(room.shardReward);
+                const int puzzleShards = static_cast<int>(std::round(static_cast<float>(room.shardReward) * m_player.shardGainMultiplier()));
+                m_player.addEchoShards(puzzleShards);
                 room.shardReward = 0;
-                m_statusBannerText = "HARMONIC PUZZLE SOLVED (+20 ECHO SHARDS)!";
+                m_statusBannerText = "HARMONIC PUZZLE SOLVED (+" + std::to_string(puzzleShards) + " ECHO SHARDS)!";
             } else {
                 m_statusBannerText = "HARMONIC RESONATOR CHARGED — BARRIER UNSEALED";
             }
@@ -723,9 +777,26 @@ void Game::updatePlaying(float dt) {
     bool anyActiveBefore = false;
     bool allInactiveNow = true;
 
+    const float roomDmgScale = (room.roomEvent == RoomEvent::ResonanceOvercharge) ? 1.25f : 1.0f;
+
     for (auto& enemy : m_enemies) {
         if (!enemy.isActive()) continue;
         anyActiveBefore = true;
+
+        // Block 5.4: Multi-Phase Boss Arena Mechanics — Phase II/III Dissonant Shockwave
+        if (enemy.variant() == EnemyVariant::AbyssalBoss &&
+            enemy.bossAcousticPhase() != BossArenaAcousticPhase::HarmonicChoir) {
+            m_bossDissonanceTimer += dt;
+            if (m_bossDissonanceTimer >= 4.2f) {
+                m_bossDissonanceTimer = 0.0f;
+                m_acoustics.emitPulse(enemy.position(), 470.0f, 680.0f, 1.25f, 96, WaveSignature::EnemyTremor, 0.0f, 6.2831853f, false);
+                if (m_player.movedLastFrame() && m_player.activeStance() != MovementStance::Sneak) {
+                    registerNoiseAction(NoiseAction::BossDissonanceShock, 1.0f, m_player.position());
+                    m_statusBannerText = "CHOIR SOVEREIGN DISSONANCE WAVE — SNEAK [SHIFT] OR STOP TO AVOID +15 NOISE!";
+                    m_statusBannerTimer = 2.6f;
+                }
+            }
+        }
 
         bool reflectedHit = false;
         bool highFreqHit = false;
@@ -736,7 +807,7 @@ void Game::updatePlaying(float dt) {
             &highFreqHit
         );
         if (impactEnergy > 0.0f) {
-            const float dmg = impactEnergy * 11.5f * m_player.sonarDamageMultiplier(reflectedHit, highFreqHit);
+            const float dmg = impactEnergy * 11.5f * m_player.sonarDamageMultiplier(reflectedHit, highFreqHit) * roomDmgScale;
             if (m_player.hasRelic(RelicId::EchoSiphonCoil)) {
                 m_player.restoreStamina(5.5f);
             }
@@ -831,7 +902,8 @@ void Game::updatePlaying(float dt) {
         } else {
             const bool wasIntrusionEncounter = room.noiseIntrusionActive;
             bool isGhostClear = false;
-            const int shardsEarned = Labyrinth::computeClearShardReward(room.shardReward, m_roomPeakNoise, isGhostClear);
+            const int baseReward = static_cast<int>(std::round(static_cast<float>(room.shardReward) * m_player.shardGainMultiplier()));
+            const int shardsEarned = Labyrinth::computeClearShardReward(baseReward, m_roomPeakNoise, isGhostClear, room.roomEvent);
             room.shardReward = 0;
             if (!wasIntrusionEncounter) {
                 room.ghostCleared = isGhostClear;
@@ -846,7 +918,8 @@ void Game::updatePlaying(float dt) {
                 m_statusBannerText = "INTRUDER DISRUPTED — CHAMBER DOORS RE-UNSEALED!";
             } else if (isGhostClear) {
                 ++m_ghostClearsThisRun;
-                std::string bonusMsg = "GHOST CLEAR (PEAK NOISE <= 30)! +" + std::to_string(shardsEarned) + " SHARDS (x1.5)";
+                ++m_metaTotalGhostClears;
+                std::string bonusMsg = "GHOST CLEAR (PEAK NOISE <= 30)! +" + std::to_string(shardsEarned) + " SHARDS";
                 if (!m_player.hasRelic(RelicId::SilentStep)) {
                     m_player.addRelic(RelicId::SilentStep, &m_acoustics);
                     bonusMsg += " & SILENT STEP RELIC UNLOCKED!";

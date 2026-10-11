@@ -1724,14 +1724,17 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <section className="bg-[#0e131b] border border-slate-800/80 rounded-lg p-6 space-y-3">
                 <h2 className="font-display text-lg font-semibold text-slate-100">
-                  01. Phase A — Initial Workspace Audit & Diagnosis
+                  01. EchoLabyrinth 5.0 &ldquo;Resonance&rdquo; — Phase A, B &amp; C Architecture
                 </h2>
                 <p className="text-sm text-slate-300 leading-relaxed">
-                  Upon inspecting the workspace root (<code className="text-sky-300">/</code> and <code className="text-sky-300">/src</code>), the initial environment contained only a blank AI Studio React/Vite web scaffold (<code className="text-sky-300">package.json</code>, <code className="text-sky-300">src/App.tsx</code> returning an empty <code className="text-sky-300">&lt;div /&gt;</code>) and zero pre-existing <code className="text-sky-300">.cpp</code>, <code className="text-sky-300">.hpp</code>, or <code className="text-sky-300">CMakeLists.txt</code> files.
+                  Sound is sight, weapon, and risk. The native C++17 &amp; SFML 2.6 engine in <code className="text-sky-300">/cpp/</code> implements all 5 Resonance blocks:
                 </p>
-                <p className="text-sm text-slate-400 leading-relaxed">
-                  To respect the strict Change Safety rules (never inventing claims about pre-existing files while providing a complete working implementation), we constructed the full modular C++17 + SFML 2.6 codebase inside <code className="text-sky-300">/cpp/</code> and mirrored its exact math, 15-room topology, and 6-state AI in the interactive web simulation so you can playtest immediately or upload existing local C++ files for diffing.
-                </p>
+                <ul className="text-xs text-slate-400 space-y-1.5 leading-relaxed list-disc list-inside">
+                  <li><strong className="text-slate-200">Block 1 (Noise Meter &amp; Ghost Clear):</strong> 0–100 continuous Noise Meter with Quiet/Audible/Loud/Scream tiers, 50% cross-room attenuation through open doors, enemy intrusion, and Ghost Clear (<code className="text-sky-300">&le;30</code> peak noise &rarr; 1.5&times; Shards &amp; Silent Step relic).</li>
+                  <li><strong className="text-slate-200">Block 2 (Material Physics):</strong> DampMoss (-80% reflection &amp; stealth shelter), Polished Metal (+2 bonus reflections), Brittle Glass (shatters at +40 noise), Water (2&times; range, +15 splash), and 4s Resonator Pipe Columns.</li>
+                  <li><strong className="text-slate-200">Block 3 &amp; 4 (Arsenal &amp; 9 Enemies):</strong> Narrow Whistle (+5 noise), Seismic Stomp (+35 noise &amp; knockback), 3s Echo Trap Mines, Low/Mid/High Frequency Tuning, plus SilentStalker, DeafBrute, Mimic, and EchoSwarm.</li>
+                  <li><strong className="text-slate-200">Block 5 (Room Events, 12 Relics, 12 Codex Logs &amp; Save V5):</strong> EchoStorm, AcousticBlackout (+50% Shards), ResonanceOvercharge, 3-phase Choir Sovereign arena mechanics, 12 persistent Audio-Lore Codex entries, and <code className="text-sky-300">ECHOLABYRINTH_SAVE_V5</code> (with V4 compatibility) verified by 17/17 self-test suites.</li>
+                </ul>
               </section>
 
               <section className="bg-[#0e131b] border border-slate-800/80 rounded-lg p-6 space-y-3">
@@ -1743,10 +1746,10 @@ export default function App() {
                     <strong className="text-sky-300">Ray-Sampled Wavefronts vs. Full 2D FDTD Grid:</strong> Finite-Difference Time-Domain wave solvers require costly per-pixel updates every frame. Instead, <code className="text-sky-300">AcousticSystem</code> uses a pre-allocated ring buffer of 2,048 rays with analytical 2D segment-segment intersection and specular normal reflection <code className="text-sky-300">R = D - 2(D·N)N</code>.
                   </li>
                   <li>
-                    <strong className="text-sky-300">Wall Phosphor Echo Persistence:</strong> When a ray strikes a wall segment, it spawns a <code className="text-sky-300">WallEchoTrace</code> aligned to the wall tangent. Traces decay quadratically according to material persistence (Stone 3.8s, Iron 5.2s, Water 2.7s, Damp Moss 1.6s).
+                    <strong className="text-sky-300">Wall Phosphor Echo Persistence:</strong> When a ray strikes a wall segment, it spawns a <code className="text-sky-300">WallEchoTrace</code> aligned to the wall tangent. Traces decay quadratically according to material persistence and active frequency (Low/Mid/High).
                   </li>
                   <li>
-                    <strong className="text-sky-300">Zero Heap Allocations in Main Loop:</strong> Both rays and wall traces use fixed-capacity ring cursors rendered in two batched <code className="text-sky-300">sf::VertexArray(sf::Lines)</code> calls with <code className="text-sky-300">sf::BlendAdd</code>.
+                    <strong className="text-sky-300">Zero Heap Allocations in Main Loop:</strong> Both rays and wall traces use fixed-capacity ring cursors rendered in batched <code className="text-sky-300">sf::VertexArray(sf::Lines)</code> calls with <code className="text-sky-300">sf::BlendAdd</code>.
                   </li>
                 </ul>
               </section>

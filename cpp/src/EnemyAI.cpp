@@ -89,6 +89,15 @@ int EnemyAI::bossPhase() const noexcept {
     return 1;
 }
 
+BossArenaAcousticPhase EnemyAI::bossAcousticPhase() const noexcept {
+    switch (bossPhase()) {
+        case 3:  return BossArenaAcousticPhase::AbyssalSilence;
+        case 2:  return BossArenaAcousticPhase::DissonantPulse;
+        case 1:
+        default: return BossArenaAcousticPhase::HarmonicChoir;
+    }
+}
+
 void EnemyAI::configurePatrol(const std::vector<sf::Vector2f>& waypoints, EnemyVariant variant) {
     m_waypoints = waypoints;
     m_variant = variant;
@@ -285,6 +294,9 @@ bool EnemyAI::applyAcousticDamage(
     } else if (m_variant == EnemyVariant::EchoSwarm && isHighFreqHit) {
         // Block 4.4 & 3.4: High-frequency ultrasonic waves disrupt EchoSwarm for 2x damage
         finalDmg *= 2.0f;
+    } else if (m_variant == EnemyVariant::AbyssalBoss && bossAcousticPhase() == BossArenaAcousticPhase::AbyssalSilence) {
+        // Block 5.4: Phase III Abyssal Silence — reflected wall echoes or High-freq [3] waves deal 1.85x resonance damage!
+        finalDmg *= (isReflectedHit || isHighFreqHit) ? 1.85f : 0.65f;
     }
 
     // Block 4.3: Hitting a Mimic immediately shatters its crystal disguise!

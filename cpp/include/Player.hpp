@@ -98,6 +98,8 @@ public:
     float sonarDamageMultiplier(bool isReflectedHit, bool isHighFreqHit = false) const noexcept;
     float resonatorChargeMultiplier() const noexcept;
     float noiseGainMultiplier(bool isFootstep) const noexcept;
+    float silenceDecayMultiplier() const noexcept;
+    float shardGainMultiplier() const noexcept;
 
     sf::Vector2f position() const noexcept { return m_position; }
     float facingAngleRad() const noexcept { return m_facingAngle; }

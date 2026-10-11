@@ -19,7 +19,7 @@ void hashMix(std::uint32_t& hash, std::uint32_t val) noexcept {
 }
 } // namespace
 
-std::uint32_t SaveSystem::computeChecksum(const SaveData& data) noexcept {
+std::uint32_t SaveSystem::computeChecksumV4(const SaveData& data) noexcept {
     std::uint32_t h = 2166136261u;
     hashMix(h, data.runSeed);
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.targetRoomCount, 15, 60)));
@@ -29,13 +29,23 @@ std::uint32_t SaveSystem::computeChecksum(const SaveData& data) noexcept {
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.decoyCount, 0, 99)));
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.echoShards, 0, 9999)));
     hashMix(h, static_cast<std::uint32_t>(std::round(sanitizeFloat(data.masterVolume, 0.0f, 100.0f, 80.0f) * 10.0f)));
-    hashMix(h, static_cast<std::uint32_t>(std::clamp(data.maxReflections, 1, 6)));
+    hashMix(h, static_cast<std::uint32_t>(std::clamp(data.maxReflections, 1, 8)));
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.totalVictories, 0, 9999)));
     for (int id : data.activatedSwitches) hashMix(h, static_cast<std::uint32_t>(id));
     for (int id : data.collectedLoreIds) hashMix(h, static_cast<std::uint32_t>(id));
     for (int id : data.visitedRooms) hashMix(h, static_cast<std::uint32_t>(id));
     for (int id : data.clearedRooms) hashMix(h, static_cast<std::uint32_t>(id));
     for (int id : data.collectedRelics) hashMix(h, static_cast<std::uint32_t>(id));
+    return h;
+}
+
+std::uint32_t SaveSystem::computeChecksum(const SaveData& data) noexcept {
+    std::uint32_t h = computeChecksumV4(data);
+    hashMix(h, static_cast<std::uint32_t>(std::clamp(data.echoTrapCount, 0, 99)));
+    hashMix(h, static_cast<std::uint32_t>(std::clamp(data.activeFrequency, 0, 2)));
+    hashMix(h, static_cast<std::uint32_t>(std::clamp(data.ghostClearsThisRun, 0, 999)));
+    hashMix(h, static_cast<std::uint32_t>(std::clamp(data.metaTotalGhostClears, 0, 99999)));
+    for (int id : data.discoveredCodexIds) hashMix(h, static_cast<std::uint32_t>(id));
     return h;
 }
 
@@ -66,25 +76,29 @@ bool SaveSystem::saveToFile(const std::string& filePath, const SaveData& rawData
     data.playerHealth = std::clamp(data.playerHealth, 1, data.playerMaxHealth);
     data.playerStamina = sanitizeFloat(data.playerStamina, 0.0f, 100.0f, 100.0f);
     data.decoyCount = std::clamp(data.decoyCount, 0, 99);
+    data.echoTrapCount = std::clamp(data.echoTrapCount, 0, 99);
+    data.activeFrequency = std::clamp(data.activeFrequency, 0, 2);
     data.echoShards = std::clamp(data.echoShards, 0, 9999);
+    data.ghostClearsThisRun = std::clamp(data.ghostClearsThisRun, 0, 999);
     data.masterVolume = sanitizeFloat(data.masterVolume, 0.0f, 100.0f, 80.0f);
     data.musicVolume = sanitizeFloat(data.musicVolume, 0.0f, 100.0f, 75.0f);
     data.sfxVolume = sanitizeFloat(data.sfxVolume, 0.0f, 100.0f, 85.0f);
     data.ambientVolume = sanitizeFloat(data.ambientVolume, 0.0f, 100.0f, 80.0f);
     data.rayDensityScale = sanitizeFloat(data.rayDensityScale, 0.5f, 2.0f, 1.0f);
-    data.maxReflections = std::clamp(data.maxReflections, 1, 6);
+    data.maxReflections = std::clamp(data.maxReflections, 1, 8);
     data.ambientVisibility = sanitizeFloat(data.ambientVisibility, 0.0f, 0.25f, 0.03f);
     data.runTimeSec = sanitizeFloat(data.runTimeSec, 0.0f, 999999.0f, 0.0f);
     data.totalRuns = std::clamp(data.totalRuns, 1, 99999);
     data.totalVictories = std::clamp(data.totalVictories, 0, 9999);
     data.bossesDefeated = std::clamp(data.bossesDefeated, 0, 9999);
+    data.metaTotalGhostClears = std::clamp(data.metaTotalGhostClears, 0, 99999);
 
     const std::string tmpPath = filePath + ".tmp";
     {
         std::ofstream out(tmpPath, std::ios::trunc);
         if (!out.is_open()) return false;
 
-        out << "ECHOLABYRINTH_SAVE_V4\n";
+        out << "ECHOLABYRINTH_SAVE_V5\n";
         out << "seed " << data.runSeed << "\n";
         out << "room_count " << data.targetRoomCount << "\n";
         out << "room " << data.checkpointRoomId << "\n";
@@ -92,14 +106,17 @@ bool SaveSystem::saveToFile(const std::string& filePath, const SaveData& rawData
         out << "health " << data.playerHealth << " " << data.playerMaxHealth << "\n";
         out << "stamina " << data.playerStamina << "\n";
         out << "decoys " << data.decoyCount << "\n";
+        out << "traps " << data.echoTrapCount << "\n";
+        out << "frequency " << data.activeFrequency << "\n";
         out << "shards " << data.echoShards << "\n";
+        out << "ghost_clears " << data.ghostClearsThisRun << "\n";
         out << "volume " << data.masterVolume << "\n";
         out << "channels " << data.musicVolume << " " << data.sfxVolume << " " << data.ambientVolume << "\n";
         out << "ray_scale " << data.rayDensityScale << "\n";
         out << "bounces " << data.maxReflections << "\n";
         out << "darkness " << data.ambientVisibility << "\n";
         out << "runtime " << data.runTimeSec << "\n";
-        out << "meta " << data.totalRuns << " " << data.totalVictories << " " << data.bossesDefeated << "\n";
+        out << "meta " << data.totalRuns << " " << data.totalVictories << " " << data.bossesDefeated << " " << data.metaTotalGhostClears << "\n";
 
         out << "switches";
         for (int id : data.activatedSwitches) out << " " << id;
@@ -107,6 +124,10 @@ bool SaveSystem::saveToFile(const std::string& filePath, const SaveData& rawData
 
         out << "lore";
         for (int id : data.collectedLoreIds) out << " " << id;
+        out << "\n";
+
+        out << "codex";
+        for (int id : data.discoveredCodexIds) out << " " << id;
         out << "\n";
 
         out << "visited";
@@ -152,11 +173,12 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
     if (!std::getline(in, header)) return false;
     if (!header.empty() && header.back() == '\r') header.pop_back();
 
+    const bool isV5 = (header == "ECHOLABYRINTH_SAVE_V5");
     const bool isV4 = (header == "ECHOLABYRINTH_SAVE_V4");
     const bool isV3 = (header == "ECHOLABYRINTH_SAVE_V3");
     const bool isV2 = (header == "ECHOLABYRINTH_SAVE_V2");
     const bool isV1 = (header == "ECHOLABYRINTH_SAVE_V1");
-    if (!isV4 && !isV3 && !isV2 && !isV1) {
+    if (!isV5 && !isV4 && !isV3 && !isV2 && !isV1) {
         return false;
     }
 
@@ -208,10 +230,25 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
             if (iss >> d) {
                 parsed.decoyCount = std::clamp(d, 0, 99);
             }
+        } else if (key == "traps") {
+            int trp = 3;
+            if (iss >> trp) {
+                parsed.echoTrapCount = std::clamp(trp, 0, 99);
+            }
+        } else if (key == "frequency") {
+            int fq = 1;
+            if (iss >> fq) {
+                parsed.activeFrequency = std::clamp(fq, 0, 2);
+            }
         } else if (key == "shards") {
             int sh = 0;
             if (iss >> sh) {
                 parsed.echoShards = std::clamp(sh, 0, 9999);
+            }
+        } else if (key == "ghost_clears") {
+            int gc = 0;
+            if (iss >> gc) {
+                parsed.ghostClearsThisRun = std::clamp(gc, 0, 999);
             }
         } else if (key == "volume") {
             float v = 80.0f;
@@ -233,7 +270,7 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
         } else if (key == "bounces") {
             int b = 3;
             if (iss >> b) {
-                parsed.maxReflections = std::clamp(b, 1, 6);
+                parsed.maxReflections = std::clamp(b, 1, 8);
             }
         } else if (key == "darkness") {
             float dk = 0.03f;
@@ -246,11 +283,14 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
                 parsed.runTimeSec = sanitizeFloat(rt, 0.0f, 999999.0f, 0.0f);
             }
         } else if (key == "meta") {
-            int tr = 1, tv = 0, bd = 0;
+            int tr = 1, tv = 0, bd = 0, mgc = 0;
             if (iss >> tr >> tv >> bd) {
                 parsed.totalRuns = std::clamp(tr, 1, 99999);
                 parsed.totalVictories = std::clamp(tv, 0, 9999);
                 parsed.bossesDefeated = std::clamp(bd, 0, 9999);
+                if (iss >> mgc) {
+                    parsed.metaTotalGhostClears = std::clamp(mgc, 0, 99999);
+                }
             }
         } else if (key == "switches") {
             int val = 0;
@@ -264,6 +304,15 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
             while (iss >> val && parsed.collectedLoreIds.size() < 128) {
                 if (std::find(parsed.collectedLoreIds.begin(), parsed.collectedLoreIds.end(), val) == parsed.collectedLoreIds.end()) {
                     parsed.collectedLoreIds.push_back(val);
+                }
+            }
+        } else if (key == "codex") {
+            int val = 0;
+            while (iss >> val && parsed.discoveredCodexIds.size() < 64) {
+                if (val >= 200 && val < 220) {
+                    if (std::find(parsed.discoveredCodexIds.begin(), parsed.discoveredCodexIds.end(), val) == parsed.discoveredCodexIds.end()) {
+                        parsed.discoveredCodexIds.push_back(val);
+                    }
                 }
             }
         } else if (key == "visited") {
@@ -287,7 +336,7 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
         } else if (key == "relics") {
             int val = 0;
             while (iss >> val && parsed.collectedRelics.size() < 16) {
-                if (val >= 0 && val < 10) {
+                if (val >= 0 && val < 12) {
                     if (std::find(parsed.collectedRelics.begin(), parsed.collectedRelics.end(), val) == parsed.collectedRelics.end()) {
                         parsed.collectedRelics.push_back(val);
                     }
@@ -301,8 +350,12 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
     }
 
     if (!hasRoomKey) return false;
-    if (isV4 || isV3) {
+    if (isV5) {
         if (!hasChecksum || computeChecksum(parsed) != fileChecksum) {
+            return false;
+        }
+    } else if (isV4 || isV3) {
+        if (!hasChecksum || computeChecksumV4(parsed) != fileChecksum) {
             return false;
         }
     }

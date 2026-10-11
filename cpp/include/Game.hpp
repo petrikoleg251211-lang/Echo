@@ -76,6 +76,7 @@ private:
     void renderMenuOverlay();
     void renderSettingsOverlay();
     void renderControlsOverlay();
+    void renderCodexOverlay();
 
     // Room Transitions & Persistence (Game.cpp)
     void enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild = true);
@@ -127,6 +128,12 @@ private:
     float m_noiseSilenceGraceTimer{0.0f};
     float m_noiseIntrusionCooldown{0.0f};
     int m_ghostClearsThisRun{0};
+
+    // Block 5: Dynamic Room Events, Boss Arena Phases & Persistent Audio-Lore Codex
+    float m_echoStormTimer{0.0f};
+    float m_bossDissonanceTimer{0.0f};
+    int m_metaTotalGhostClears{0};
+    std::vector<int> m_discoveredCodexIds;
 
     // Roguelike Run & Meta-Progression Counters
     int m_enemiesDisruptedThisRun{0};

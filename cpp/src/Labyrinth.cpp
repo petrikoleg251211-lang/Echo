@@ -471,10 +471,23 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
         }
     }
 
-    // 7. Construct full RoomDefinition geometry, 4-directional doors, props, relics, and enemy waves
+    // 7. Construct full RoomDefinition geometry, 4-directional doors, props, relics, codex logs, and enemy waves
     m_rooms.resize(nodes.size());
-    constexpr std::size_t kPedestalPoolSize = 8;
-    std::size_t relicRotationCursor = static_cast<std::size_t>(m_runSeed % kPedestalPoolSize);
+    constexpr RelicId kPedestalPool[11] = {
+        RelicId::HarmonicAmplifier,
+        RelicId::MossTreadBoots,
+        RelicId::PrismaticMirror,
+        RelicId::PiezoArmorCore,
+        RelicId::PhantomDecoyRig,
+        RelicId::ResonanceCapacitor,
+        RelicId::SubharmonicVisor,
+        RelicId::EchoSiphonCoil,
+        RelicId::PhaseDampener,
+        RelicId::UltrasonicLens,
+        RelicId::AbyssalTuningFork
+    };
+    std::size_t relicRotationCursor = static_cast<std::size_t>(m_runSeed % 11u);
+    int codexLogCursor = 0;
 
     const SurfaceMaterial materials[5] = {
         SurfaceMaterial::Stone,
@@ -483,6 +496,14 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
         SurfaceMaterial::Water,
         SurfaceMaterial::DampMoss
     };
+
+    const RoomEvent eventPool[4] = {
+        RoomEvent::None,
+        RoomEvent::EchoStorm,
+        RoomEvent::AcousticBlackout,
+        RoomEvent::ResonanceOvercharge
+    };
+    std::size_t eventRotationCursor = 0;
 
     for (std::size_t i = 0; i < nodes.size(); ++i) {
         const auto& gn = nodes[i];
@@ -496,6 +517,12 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
         room.playerDefaultSpawn = {640.0f, 400.0f};
         room.isCheckpoint = (gn.type == RoomType::Start || gn.type == RoomType::Sanctuary || gn.type == RoomType::FinalExit);
         room.isExitRoom = (gn.type == RoomType::FinalExit);
+
+        // Block 5.1: Deterministically assign dynamic acoustic RoomEvents to Combat, Elite, and Puzzle chambers
+        if (gn.type == RoomType::Combat || gn.type == RoomType::Elite || gn.type == RoomType::Puzzle) {
+            room.roomEvent = eventPool[eventRotationCursor % 4];
+            ++eventRotationCursor;
+        }
 
         std::ostringstream titleOss;
         titleOss << "CHAMBER " << (i + 1) << " [" << gn.gx << "," << gn.gy << "] - " << roomTypeName(gn.type);
@@ -561,12 +588,13 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 addRectObstacle(room.walls, 865.0f, 210.0f, 95.0f, 95.0f, SurfaceMaterial::Stone);
                 addRectObstacle(room.walls, 320.0f, 495.0f, 95.0f, 95.0f, SurfaceMaterial::Stone);
                 addRectObstacle(room.walls, 865.0f, 495.0f, 95.0f, 95.0f, SurfaceMaterial::Stone);
+                const CodexEntrySpec c0 = getCodexEntrySpec(codexLogCursor++);
                 room.collectibles.push_back({
-                    200,
+                    c0.id,
                     {640.0f, 280.0f},
                     false,
-                    "SURVEYOR BRIEFING - RESONANCE PROTOCOL",
-                    "SOUND IS SIGHT, WEAPON, AND RISK. OPEN DOORS LEAK 50% NOISE TO NEIGHBORS; CLEAR CHAMBERS UNDER 30 NOISE FOR GHOST CLEAR."
+                    c0.title,
+                    c0.excerpt
                 });
                 break;
             }
@@ -605,6 +633,18 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                     addRectObstacle(room.walls, 310.0f, 240.0f, 95.0f, 320.0f, secondaryMat);
                     addRectObstacle(room.walls, 875.0f, 240.0f, 95.0f, 320.0f, SurfaceMaterial::DampMoss);
                     room.walls.push_back({{580.0f, 535.0f}, {700.0f, 535.0f}, SurfaceMaterial::Glass, 700 + static_cast<int>(i), false});
+                }
+
+                // Distribute remaining Audio-Lore Codex logs across chambers
+                if (codexLogCursor < static_cast<int>(kTotalCodexFragments)) {
+                    const CodexEntrySpec cx = getCodexEntrySpec(codexLogCursor++);
+                    room.collectibles.push_back({
+                        cx.id,
+                        {640.0f, 330.0f},
+                        false,
+                        cx.title,
+                        cx.excerpt
+                    });
                 }
 
                 // Block 4: Deterministic selection across both classic and new acoustic enemy variants
@@ -650,7 +690,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 addRectObstacle(room.walls, 370.0f, 490.0f, 90.0f, 90.0f, SurfaceMaterial::Metal);
                 addRectObstacle(room.walls, 820.0f, 490.0f, 90.0f, 90.0f, SurfaceMaterial::Metal);
 
-                const auto rId = static_cast<RelicId>(relicRotationCursor % kPedestalPoolSize);
+                const RelicId rId = kPedestalPool[relicRotationCursor % 11];
                 ++relicRotationCursor;
                 room.relicPedestals.push_back({rId, {640.0f, 400.0f}, 0, false});
                 break;
@@ -660,15 +700,16 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 room.cleared = true;
                 room.shardReward = 25;
                 room.objectiveText = "CONCEALED ACOUSTIC CAVERN DISCOVERED! CLAIM THE ANCIENT RELIC & ECHO CACHE [F].";
-                const auto rId = static_cast<RelicId>(relicRotationCursor % kPedestalPoolSize);
+                const RelicId rId = kPedestalPool[relicRotationCursor % 11];
                 ++relicRotationCursor;
                 room.relicPedestals.push_back({rId, {640.0f, 360.0f}, 0, false});
+                const CodexEntrySpec cs = getCodexEntrySpec(codexLogCursor < static_cast<int>(kTotalCodexFragments) ? codexLogCursor++ : 11);
                 room.collectibles.push_back({
-                    200 + static_cast<int>(i),
+                    cs.id,
                     {640.0f, 480.0f},
                     false,
-                    "HIDDEN SURVEYOR CACHE",
-                    "RESONANT CAVERN UNSEALED BY SONAR WAVES. CONTAINS HIGH-PURITY ECHO SHARDS AND DECOY STONES."
+                    cs.title,
+                    cs.excerpt
                 });
                 break;
             }
@@ -730,7 +771,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
             case RoomType::Shop: {
                 room.cleared = true;
                 room.objectiveText = "QUARTERMASTER EXCHANGE: PRESS [F] NEAR AN ITEM TO SPEND ECHO SHARDS.";
-                const auto rId = static_cast<RelicId>(relicRotationCursor % kPedestalPoolSize);
+                const RelicId rId = kPedestalPool[relicRotationCursor % 11];
                 ++relicRotationCursor;
                 const RelicSpec spec = getRelicSpec(rId);
 
@@ -785,7 +826,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                     1
                 });
 
-                const auto rId = static_cast<RelicId>(relicRotationCursor % kPedestalPoolSize);
+                const RelicId rId = kPedestalPool[relicRotationCursor % 11];
                 ++relicRotationCursor;
                 room.relicPedestals.push_back({rId, {640.0f, 400.0f}, 0, false});
                 break;
@@ -1032,17 +1073,27 @@ bool Labyrinth::reopenRoomForNoiseIntrusion(int roomId) noexcept {
     return true;
 }
 
-int Labyrinth::computeClearShardReward(int baseShards, float roomPeakNoise, bool& outIsGhostClear) noexcept {
+int Labyrinth::computeClearShardReward(
+    int baseShards,
+    float roomPeakNoise,
+    bool& outIsGhostClear,
+    RoomEvent roomEvent
+) noexcept {
     if (baseShards <= 0) {
         outIsGhostClear = false;
         return 0;
     }
+    float mult = 1.0f;
     if (roomPeakNoise <= cfg::noise::kThresholdAudible) {
         outIsGhostClear = true;
-        return static_cast<int>(std::round(static_cast<float>(baseShards) * cfg::noise::kGhostClearShardMultiplier));
+        mult *= cfg::noise::kGhostClearShardMultiplier;
+    } else {
+        outIsGhostClear = false;
     }
-    outIsGhostClear = false;
-    return baseShards;
+    if (roomEvent == RoomEvent::AcousticBlackout) {
+        mult *= 1.50f;
+    }
+    return static_cast<int>(std::round(static_cast<float>(baseShards) * mult));
 }
 
 void Labyrinth::activateSwitch(int switchId) noexcept {

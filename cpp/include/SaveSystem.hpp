@@ -17,7 +17,10 @@ struct SaveData {
     int playerMaxHealth{6};
     float playerStamina{100.0f};
     int decoyCount{4};
+    int echoTrapCount{3};
+    int activeFrequency{1};
     int echoShards{0};
+    int ghostClearsThisRun{0};
 
     // Audio & Graphics Settings
     float masterVolume{80.0f};
@@ -33,13 +36,15 @@ struct SaveData {
     int totalRuns{1};
     int totalVictories{0};
     int bossesDefeated{0};
+    int metaTotalGhostClears{0};
 
-    // In-Run World & Build Lists
+    // In-Run World & Build Lists + Persistent Audio-Lore Codex
     std::vector<int> activatedSwitches;
     std::vector<int> collectedLoreIds;
     std::vector<int> visitedRooms;
     std::vector<int> clearedRooms;
     std::vector<int> collectedRelics;
+    std::vector<int> discoveredCodexIds;
 };
 
 class SaveSystem {
@@ -49,6 +54,7 @@ public:
     static bool saveToFile(const std::string& filePath, const SaveData& data);
     static bool loadFromFile(const std::string& filePath, SaveData& outData);
     static std::uint32_t computeChecksum(const SaveData& data) noexcept;
+    static std::uint32_t computeChecksumV4(const SaveData& data) noexcept;
 };
 
 } // namespace echo

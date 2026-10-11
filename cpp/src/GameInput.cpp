@@ -28,18 +28,20 @@ void Game::rebuildMenuButtons() {
 
     if (m_state == AppState::MainMenu) {
         const bool hasSave = SaveSystem::hasSaveFile(m_saveFilePath);
-        m_menuButtons.push_back({"START NEW ROGUELIKE RUN", {cx, 330.0f}, {390.0f, 46.0f}, true});
-        m_menuButtons.push_back({"CONTINUE SAVED EXPEDITION", {cx, 390.0f}, {390.0f, 46.0f}, hasSave});
-        m_menuButtons.push_back({"AUDIO & ACOUSTIC SETTINGS", {cx, 450.0f}, {390.0f, 46.0f}, true});
-        m_menuButtons.push_back({"SURVEYOR FIELD MANUAL", {cx, 510.0f}, {390.0f, 46.0f}, true});
-        m_menuButtons.push_back({"EXIT TO DESKTOP", {cx, 570.0f}, {390.0f, 46.0f}, true});
+        m_menuButtons.push_back({"START NEW ROGUELIKE RUN", {cx, 310.0f}, {390.0f, 42.0f}, true});
+        m_menuButtons.push_back({"CONTINUE SAVED EXPEDITION", {cx, 362.0f}, {390.0f, 42.0f}, hasSave});
+        m_menuButtons.push_back({"AUDIO-LORE CODEX [J]", {cx, 414.0f}, {390.0f, 42.0f}, true});
+        m_menuButtons.push_back({"AUDIO & ACOUSTIC SETTINGS", {cx, 466.0f}, {390.0f, 42.0f}, true});
+        m_menuButtons.push_back({"SURVEYOR FIELD MANUAL", {cx, 518.0f}, {390.0f, 42.0f}, true});
+        m_menuButtons.push_back({"EXIT TO DESKTOP", {cx, 570.0f}, {390.0f, 42.0f}, true});
     } else if (m_state == AppState::Paused) {
-        m_menuButtons.push_back({"RESUME EXPEDITION", {cx, 310.0f}, {380.0f, 44.0f}, true});
-        m_menuButtons.push_back({"SAVE CHECKPOINT [F5]", {cx, 366.0f}, {380.0f, 44.0f}, true});
-        m_menuButtons.push_back({"START NEW SEED RUN", {cx, 422.0f}, {380.0f, 44.0f}, true});
-        m_menuButtons.push_back({"AUDIO & ACOUSTIC SETTINGS", {cx, 478.0f}, {380.0f, 44.0f}, true});
-        m_menuButtons.push_back({"SURVEYOR FIELD MANUAL", {cx, 534.0f}, {380.0f, 44.0f}, true});
-        m_menuButtons.push_back({"RETURN TO MAIN MENU", {cx, 590.0f}, {380.0f, 44.0f}, true});
+        m_menuButtons.push_back({"RESUME EXPEDITION", {cx, 290.0f}, {380.0f, 40.0f}, true});
+        m_menuButtons.push_back({"SAVE CHECKPOINT [F5]", {cx, 340.0f}, {380.0f, 40.0f}, true});
+        m_menuButtons.push_back({"AUDIO-LORE CODEX [J]", {cx, 390.0f}, {380.0f, 40.0f}, true});
+        m_menuButtons.push_back({"START NEW SEED RUN", {cx, 440.0f}, {380.0f, 40.0f}, true});
+        m_menuButtons.push_back({"AUDIO & ACOUSTIC SETTINGS", {cx, 490.0f}, {380.0f, 40.0f}, true});
+        m_menuButtons.push_back({"SURVEYOR FIELD MANUAL", {cx, 540.0f}, {380.0f, 40.0f}, true});
+        m_menuButtons.push_back({"RETURN TO MAIN MENU", {cx, 590.0f}, {380.0f, 40.0f}, true});
     } else if (m_state == AppState::Settings) {
         m_menuButtons.push_back({"MASTER VOLUME: < ADJUST >", {cx, 225.0f}, {440.0f, 38.0f}, true});
         m_menuButtons.push_back({"MUSIC LAYER VOLUME: < ADJUST >", {cx, 273.0f}, {440.0f, 38.0f}, true});
@@ -50,7 +52,7 @@ void Game::rebuildMenuButtons() {
         m_menuButtons.push_back({"AMBIENT DARKNESS: < ADJUST >", {cx, 513.0f}, {440.0f, 38.0f}, true});
         m_menuButtons.push_back({"WINDOW / FULLSCREEN [F11]", {cx, 561.0f}, {440.0f, 38.0f}, true});
         m_menuButtons.push_back({"BACK", {cx, 618.0f}, {320.0f, 42.0f}, true});
-    } else if (m_state == AppState::Controls) {
+    } else if (m_state == AppState::Controls || m_state == AppState::Codex) {
         m_menuButtons.push_back({"BACK", {cx, 665.0f}, {320.0f, 44.0f}, true});
     } else if (m_state == AppState::GameOver || m_state == AppState::Victory) {
         m_menuButtons.push_back({"START NEW PROCEDURAL RUN", {cx, 465.0f}, {390.0f, 46.0f}, true});
@@ -66,9 +68,10 @@ void Game::executeMenuSelection(std::size_t index) {
     if (m_state == AppState::MainMenu) {
         if (index == 0) startNewGame();
         else if (index == 1) loadCheckpoint();
-        else if (index == 2) { m_previousState = AppState::MainMenu; m_state = AppState::Settings; rebuildMenuButtons(); }
-        else if (index == 3) { m_previousState = AppState::MainMenu; m_state = AppState::Controls; rebuildMenuButtons(); }
-        else if (index == 4) { if (m_window) m_window->close(); }
+        else if (index == 2) { m_previousState = AppState::MainMenu; m_state = AppState::Codex; rebuildMenuButtons(); }
+        else if (index == 3) { m_previousState = AppState::MainMenu; m_state = AppState::Settings; rebuildMenuButtons(); }
+        else if (index == 4) { m_previousState = AppState::MainMenu; m_state = AppState::Controls; rebuildMenuButtons(); }
+        else if (index == 5) { if (m_window) m_window->close(); }
     } else if (m_state == AppState::Paused) {
         if (index == 0) m_state = AppState::Playing;
         else if (index == 1) {
@@ -77,16 +80,20 @@ void Game::executeMenuSelection(std::size_t index) {
             m_statusBannerTimer = 2.5f;
             m_state = AppState::Playing;
         } else if (index == 2) {
-            startNewGame();
+            m_previousState = AppState::Paused;
+            m_state = AppState::Codex;
+            rebuildMenuButtons();
         } else if (index == 3) {
+            startNewGame();
+        } else if (index == 4) {
             m_previousState = AppState::Paused;
             m_state = AppState::Settings;
             rebuildMenuButtons();
-        } else if (index == 4) {
+        } else if (index == 5) {
             m_previousState = AppState::Paused;
             m_state = AppState::Controls;
             rebuildMenuButtons();
-        } else if (index == 5) {
+        } else if (index == 6) {
             m_state = AppState::MainMenu;
             rebuildMenuButtons();
         }
@@ -125,7 +132,7 @@ void Game::executeMenuSelection(std::size_t index) {
             m_state = m_previousState;
             rebuildMenuButtons();
         }
-    } else if (m_state == AppState::Controls) {
+    } else if (m_state == AppState::Controls || m_state == AppState::Codex) {
         m_state = m_previousState;
         rebuildMenuButtons();
     } else if (m_state == AppState::GameOver || m_state == AppState::Victory) {
@@ -169,6 +176,13 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
         if (key == sf::Keyboard::Escape || key == sf::Keyboard::P) {
             m_state = AppState::Paused;
             rebuildMenuButtons();
+            return;
+        }
+        if (key == sf::Keyboard::J) {
+            m_previousState = AppState::Playing;
+            m_state = AppState::Codex;
+            rebuildMenuButtons();
+            if (m_audio) m_audio->playEffect(SoundEffectId::UiSelect, 0.7f, 1.15f);
             return;
         }
         if (key == sf::Keyboard::Tab || key == sf::Keyboard::M) {
@@ -232,10 +246,10 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
         return;
     }
 
-    if (key == sf::Keyboard::Escape) {
+    if (key == sf::Keyboard::Escape || (m_state == AppState::Codex && key == sf::Keyboard::J)) {
         if (m_state == AppState::Paused) {
             m_state = AppState::Playing;
-        } else if (m_state == AppState::Settings || m_state == AppState::Controls) {
+        } else if (m_state == AppState::Settings || m_state == AppState::Controls || m_state == AppState::Codex) {
             m_state = m_previousState;
             rebuildMenuButtons();
         }
@@ -393,18 +407,21 @@ void Game::tryInteract() {
         }
     }
 
-    // 4. Check Surveyor Log Collectibles & Caches
+    // 4. Check Surveyor Log Collectibles & Caches (Block 5.3 Audio-Lore Codex)
     for (auto& lore : room.collectibles) {
         if (!lore.collected && distSqInput(pPos, lore.position) <= 50.0f * 50.0f) {
             m_labyrinth.markLoreCollected(lore.id);
+            if (std::find(m_discoveredCodexIds.begin(), m_discoveredCodexIds.end(), lore.id) == m_discoveredCodexIds.end()) {
+                m_discoveredCodexIds.push_back(lore.id);
+            }
             m_player.addDecoy(1);
             m_player.addEchoShards(10);
             m_activeLoreTitle = lore.title;
             m_activeLoreBody = lore.excerpt;
             m_loreDisplayTimer = 7.5f;
             if (m_audio) m_audio->playEffect(SoundEffectId::LorePickup, 0.9f, 1.0f);
-            m_statusBannerText = "LOG RECOVERED: " + lore.title + " (+1 DECOY, +10 SHARDS)";
-            m_statusBannerTimer = 3.2f;
+            m_statusBannerText = "CODEX LOG RECOVERED: " + lore.title + " [PRESS J FOR CODEX] (+1 DECOY, +10 SHARDS)";
+            m_statusBannerTimer = 3.6f;
             return;
         }
     }

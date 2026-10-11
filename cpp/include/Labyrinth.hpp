@@ -123,6 +123,7 @@ struct RoomDefinition {
     std::string objectiveText;
     SurfaceMaterial floorMaterial{SurfaceMaterial::Stone};
     EnemyVariant enemyVariant{EnemyVariant::Stalker};
+    RoomEvent roomEvent{RoomEvent::None};
     sf::Vector2f playerDefaultSpawn{640.0f, 400.0f};
 
     std::vector<WallSegment> walls;
@@ -193,7 +194,7 @@ public:
     void markRoomCleared(int roomId) noexcept;
     bool isRoomCleared(int roomId) const noexcept;
 
-    // Block 1: Cross-room sound propagation, closed-door blocking, & Ghost Clear rewards
+    // Block 1 & Block 5: Cross-room sound propagation, closed-door blocking, & Ghost Clear / RoomEvent rewards
     bool isDoorOpenTowards(int roomId, CardinalDir dir) const noexcept;
     std::vector<RoomNoiseLeak> propagateNoiseFromRoom(
         int sourceRoomId,
@@ -201,7 +202,12 @@ public:
         int maxGridSteps = 2
     ) const;
     bool reopenRoomForNoiseIntrusion(int roomId) noexcept;
-    static int computeClearShardReward(int baseShards, float roomPeakNoise, bool& outIsGhostClear) noexcept;
+    static int computeClearShardReward(
+        int baseShards,
+        float roomPeakNoise,
+        bool& outIsGhostClear,
+        RoomEvent roomEvent = RoomEvent::None
+    ) noexcept;
 
     void activateSwitch(int switchId) noexcept;
     bool isSwitchActivated(int switchId) const noexcept;

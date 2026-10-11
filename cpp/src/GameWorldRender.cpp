@@ -43,6 +43,8 @@ void Game::render() {
         renderSettingsOverlay();
     } else if (m_state == AppState::Controls) {
         renderControlsOverlay();
+    } else if (m_state == AppState::Codex) {
+        renderCodexOverlay();
     } else {
         renderMenuOverlay();
     }

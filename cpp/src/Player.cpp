@@ -107,6 +107,8 @@ bool Player::addRelic(RelicId id, AcousticSystem* acoustics) {
     } else if (id == RelicId::PhantomDecoyRig) {
         m_decoyCount += 3;
         m_echoTrapCount += 2;
+    } else if (id == RelicId::UltrasonicLens) {
+        m_echoTrapCount += 2;
     } else if (id == RelicId::PrismaticMirror && acoustics != nullptr) {
         const auto nextRefl = static_cast<std::uint8_t>(std::min<int>(8, acoustics->maxReflections() + 2));
         acoustics->setMaxReflections(nextRefl);
@@ -127,7 +129,10 @@ float Player::sonarDamageMultiplier(bool isReflectedHit, bool isHighFreqHit) con
         }
     }
     if (isHighFreqHit) {
-        mult *= 1.12f;
+        mult *= hasRelic(RelicId::UltrasonicLens) ? 1.56f : 1.12f;
+    }
+    if (hasRelic(RelicId::AbyssalTuningFork)) {
+        mult *= 1.30f;
     }
     return mult;
 }
@@ -144,7 +149,18 @@ float Player::noiseGainMultiplier(bool isFootstep) const noexcept {
     if (isFootstep && hasRelic(RelicId::MossTreadBoots)) {
         mult *= 0.55f;
     }
+    if (!isFootstep && hasRelic(RelicId::PhaseDampener)) {
+        mult *= 0.70f;
+    }
     return mult;
+}
+
+float Player::silenceDecayMultiplier() const noexcept {
+    return hasRelic(RelicId::PhaseDampener) ? 1.50f : 1.0f;
+}
+
+float Player::shardGainMultiplier() const noexcept {
+    return hasRelic(RelicId::AbyssalTuningFork) ? 1.25f : 1.0f;
 }
 
 void Player::setFrequency(AcousticFrequency freq, AcousticSystem& acoustics) noexcept {

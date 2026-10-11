@@ -81,8 +81,13 @@ void Game::renderHud() {
 
     // Top-left Chamber & Objective Banner
     m_ui.drawPanel(win, {16.0f, 14.0f}, {690.0f, 62.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
-    const std::string header = room.name + "  [" + std::string(Labyrinth::roomTypeName(room.type)) + "]   //   SEED #" + std::to_string(m_labyrinth.runSeed());
-    m_ui.drawText(win, header, {28.0f, 22.0f}, 12.5f, sf::Color(56, 189, 248), TextAlign::Left, true);
+    std::string header = room.name + "  [" + std::string(Labyrinth::roomTypeName(room.type)) + "]";
+    if (room.roomEvent != RoomEvent::None) {
+        header += "  //  " + std::string(roomEventName(room.roomEvent));
+    } else {
+        header += "   //   SEED #" + std::to_string(m_labyrinth.runSeed());
+    }
+    m_ui.drawText(win, header, {28.0f, 22.0f}, 12.0f, sf::Color(56, 189, 248), TextAlign::Left, true);
     m_ui.drawText(win, room.objectiveText, {28.0f, 48.0f}, 10.5f, sf::Color(203, 213, 225));
 
     // Bottom-left Player Vitality, Stamina, Shards, & Relics Panel
@@ -118,9 +123,9 @@ void Game::renderHud() {
     // Echo Shards, Decoys, Echo Traps, Frequency & Relics counters
     m_ui.drawText(
         win,
-        "SHARDS: " + std::to_string(m_player.echoShards()) + "   |   RELICS [TAB]: " + std::to_string(m_player.relics().size()) + "/" + std::to_string(static_cast<int>(RelicId::Count)),
+        "SHARDS: " + std::to_string(m_player.echoShards()) + "   |   RELICS [TAB]: " + std::to_string(m_player.relics().size()) + "/" + std::to_string(static_cast<int>(RelicId::Count)) + "   |   CODEX [J]",
         {212.0f, 714.0f},
-        10.5f,
+        10.0f,
         sf::Color(250, 204, 21),
         TextAlign::Left,
         true
@@ -190,9 +195,9 @@ void Game::renderHud() {
     if (bossPtr != nullptr) {
         m_ui.drawText(
             win,
-            "BOSS: THE CHOIR SOVEREIGN (PHASE " + std::to_string(bossPtr->bossPhase()) + ")",
+            std::string("BOSS: ") + bossArenaPhaseName(bossPtr->bossAcousticPhase()),
             {924.0f, 714.0f},
-            11.5f,
+            11.0f,
             sf::Color(244, 63, 94),
             TextAlign::Left,
             true
@@ -206,11 +211,14 @@ void Game::renderHud() {
             sf::Color(244, 63, 94),
             sf::Color(159, 18, 57, 230)
         );
+        const char* bossHint = (bossPtr->bossAcousticPhase() == BossArenaAcousticPhase::AbyssalSilence)
+            ? "PHASE III: BOUNCE RAYS OR USE HIGH FREQ [3] FOR 1.85X DMG!"
+            : "PING [LMB] & PULSE [SPACE] TO SHATTER";
         m_ui.drawText(
             win,
-            "PING [LMB] & PULSE [SPACE] TO SHATTER",
+            bossHint,
             {924.0f, 758.0f},
-            10.0f,
+            9.5f,
             sf::Color(203, 213, 225)
         );
     } else if (activeEnemyCount > 0) {
@@ -557,6 +565,74 @@ void Game::renderControlsOverlay() {
             isHeader ? sf::Color(125, 211, 252) : sf::Color(203, 213, 225)
         );
         y += isHeader ? 25.0f : 21.0f;
+    }
+
+    if (!m_menuButtons.empty()) {
+        const auto& btn = m_menuButtons[0];
+        m_ui.drawPanel(win, btn.center - btn.size * 0.5f, btn.size, sf::Color(20, 48, 76), sf::Color(56, 189, 248), 2.0f);
+        m_ui.drawText(win, btn.label, {btn.center.x, btn.center.y - 7.0f}, 14.0f, sf::Color(224, 242, 254), TextAlign::Center, true);
+    }
+}
+
+void Game::renderCodexOverlay() {
+    if (!m_window) return;
+    auto& win = *m_window;
+    m_ui.drawPanel(win, {140.0f, 68.0f}, {1000.0f, 660.0f}, sf::Color(5, 11, 22, 246), sf::Color(56, 189, 248, 215), 2.0f);
+
+    int unlockedCount = 0;
+    for (int i = 0; i < static_cast<int>(kTotalCodexFragments); ++i) {
+        const CodexEntrySpec spec = getCodexEntrySpec(i);
+        const bool unlocked = m_labyrinth.isLoreCollected(spec.id) ||
+            (std::find(m_discoveredCodexIds.begin(), m_discoveredCodexIds.end(), spec.id) != m_discoveredCodexIds.end());
+        if (unlocked) ++unlockedCount;
+    }
+
+    const std::string title = "SUBTERRANEAN AUDIO-LORE CODEX  [" + std::to_string(unlockedCount)
+        + "/" + std::to_string(kTotalCodexFragments) + " RECOVERED]";
+    m_ui.drawText(win, title, {640.0f, 92.0f}, 18.0f, sf::Color(56, 189, 248), TextAlign::Center, true);
+
+    for (int i = 0; i < static_cast<int>(kTotalCodexFragments); ++i) {
+        const CodexEntrySpec spec = getCodexEntrySpec(i);
+        const bool unlocked = m_labyrinth.isLoreCollected(spec.id) ||
+            (std::find(m_discoveredCodexIds.begin(), m_discoveredCodexIds.end(), spec.id) != m_discoveredCodexIds.end());
+
+        const int col = i % 2;
+        const int row = i / 2;
+        const sf::Vector2f cardPos{168.0f + static_cast<float>(col) * 482.0f, 130.0f + static_cast<float>(row) * 82.0f};
+        const sf::Vector2f cardSize{462.0f, 72.0f};
+
+        m_ui.drawPanel(
+            win,
+            cardPos,
+            cardSize,
+            unlocked ? sf::Color(12, 28, 48, 235) : sf::Color(8, 14, 24, 185),
+            unlocked ? sf::Color(56, 189, 248, 195) : sf::Color(30, 41, 59, 130),
+            1.2f
+        );
+
+        const std::string headerLine = unlocked
+            ? (std::string(spec.title) + "  [" + spec.category + "]")
+            : (std::string(spec.title) + "  [ENCRYPTED RECORDING]");
+        m_ui.drawText(
+            win,
+            headerLine,
+            {cardPos.x + 12.0f, cardPos.y + 10.0f},
+            10.5f,
+            unlocked ? sf::Color(125, 211, 252) : sf::Color(100, 116, 139),
+            TextAlign::Left,
+            unlocked
+        );
+
+        const std::string bodyLine = unlocked
+            ? spec.excerpt
+            : "LOCATE SURVEYOR DATA CACHE IN THE LABYRINTH AND PRESS [F] TO DECRYPT.";
+        m_ui.drawText(
+            win,
+            bodyLine,
+            {cardPos.x + 12.0f, cardPos.y + 34.0f},
+            8.5f,
+            unlocked ? sf::Color(203, 213, 225) : sf::Color(71, 85, 105)
+        );
     }
 
     if (!m_menuButtons.empty()) {

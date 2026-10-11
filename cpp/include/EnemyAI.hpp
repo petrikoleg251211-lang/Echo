@@ -91,6 +91,7 @@ public:
     float maxHealth() const noexcept { return m_maxHp; }
     float hitRadius() const noexcept;
     int bossPhase() const noexcept;
+    BossArenaAcousticPhase bossAcousticPhase() const noexcept;
     bool isDisguisedMimic() const noexcept { return m_variant == EnemyVariant::Mimic && m_disguised; }
     bool hasCaughtPlayer() const noexcept { return m_active && m_state == EnemyState::Attack; }
 

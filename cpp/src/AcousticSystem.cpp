@@ -54,19 +54,35 @@ bool intersectSegments(
     return false;
 }
 
-sf::Color signatureColor(WaveSignature sig) noexcept {
+bool isGroundVibrationSignature(WaveSignature sig) noexcept {
+    return sig == WaveSignature::FootstepSprint ||
+           sig == WaveSignature::RadialPulse ||
+           sig == WaveSignature::StompWave ||
+           sig == WaveSignature::ShaleCrack ||
+           sig == WaveSignature::GlassShatterWave ||
+           sig == WaveSignature::EnemyTremor;
+}
+
+sf::Color signatureColor(WaveSignature sig, AcousticFrequency freq) noexcept {
     switch (sig) {
-        case WaveSignature::FootstepSneak:   return sf::Color(100, 140, 175);
-        case WaveSignature::FootstepWalk:    return sf::Color(56, 189, 248);
-        case WaveSignature::FootstepSprint:  return sf::Color(34, 211, 238);
-        case WaveSignature::DirectionalPing: return sf::Color(56, 189, 248);
-        case WaveSignature::RadialPulse:     return sf::Color(125, 211, 252);
-        case WaveSignature::DecoyImpact:     return sf::Color(167, 139, 250);
-        case WaveSignature::MechanismClunk:  return sf::Color(192, 132, 252);
-        case WaveSignature::EnemyTremor:     return sf::Color(239, 68, 68);
-        case WaveSignature::AmbientDrip:     return sf::Color(45, 212, 191);
-        case WaveSignature::ShaleCrack:      return sf::Color(251, 191, 36);
-        case WaveSignature::ResonatorHum:    return sf::Color(192, 132, 252);
+        case WaveSignature::FootstepSneak:    return sf::Color(100, 140, 175);
+        case WaveSignature::FootstepWalk:     return sf::Color(56, 189, 248);
+        case WaveSignature::FootstepSprint:   return sf::Color(34, 211, 238);
+        case WaveSignature::DirectionalPing:
+            if (freq == AcousticFrequency::Low) return sf::Color(59, 130, 246);
+            if (freq == AcousticFrequency::High) return sf::Color(165, 243, 252);
+            return sf::Color(56, 189, 248);
+        case WaveSignature::RadialPulse:      return sf::Color(125, 211, 252);
+        case WaveSignature::DecoyImpact:      return sf::Color(167, 139, 250);
+        case WaveSignature::MechanismClunk:   return sf::Color(192, 132, 252);
+        case WaveSignature::EnemyTremor:      return sf::Color(239, 68, 68);
+        case WaveSignature::AmbientDrip:      return sf::Color(45, 212, 191);
+        case WaveSignature::ShaleCrack:       return sf::Color(251, 191, 36);
+        case WaveSignature::ResonatorHum:     return sf::Color(192, 132, 252);
+        case WaveSignature::WhistleBeam:      return sf::Color(110, 231, 183);
+        case WaveSignature::StompWave:        return sf::Color(251, 146, 60);
+        case WaveSignature::EchoTrapPulse:    return sf::Color(232, 121, 249);
+        case WaveSignature::GlassShatterWave: return sf::Color(224, 242, 254);
     }
     return sf::Color(56, 189, 248);
 }
@@ -108,6 +124,16 @@ void AcousticSystem::clear() noexcept {
     m_recentEvents.clear();
     m_activeRayCount = 0;
     m_activeEchoCount = 0;
+    m_shatteredGlassCount = 0;
+}
+
+int AcousticSystem::consumeShatteredGlassCount(sf::Vector2f* outLastShatterPos) noexcept {
+    const int count = m_shatteredGlassCount;
+    if (outLastShatterPos != nullptr && count > 0) {
+        *outLastShatterPos = m_lastGlassShatterPos;
+    }
+    m_shatteredGlassCount = 0;
+    return count;
 }
 
 void AcousticSystem::emitPulse(
@@ -132,7 +158,7 @@ void AcousticSystem::emitPulse(
         ? (spreadAngleRad / static_cast<float>(scaledCount))
         : (scaledCount > 1 ? spreadAngleRad / static_cast<float>(scaledCount - 1) : 0.0f);
 
-    const sf::Color baseColor = signatureColor(signature);
+    const sf::Color baseColor = signatureColor(signature, m_activeFrequency);
 
     for (std::size_t i = 0; i < scaledCount; ++i) {
         const float angle = startAngle + static_cast<float>(i) * step;
@@ -152,8 +178,11 @@ void AcousticSystem::emitPulse(
         ray.reflections = 0;
         ray.maxReflections = m_maxReflections;
         ray.signature = signature;
+        ray.frequency = m_activeFrequency;
         ray.tint = baseColor;
         ray.emittedByPlayer = emittedByPlayer;
+        ray.metalBonusApplied = false;
+        ray.waterBoostApplied = false;
         ray.active = true;
     }
 
@@ -174,12 +203,49 @@ void AcousticSystem::emitPulse(
         initialIntensity,
         maxDistance,
         signature,
-        emittedByPlayer
+        m_activeFrequency,
+        emittedByPlayer,
+        isGroundVibrationSignature(signature)
     });
 
-    if (emittedByPlayer && (signature == WaveSignature::DirectionalPing || signature == WaveSignature::RadialPulse)) {
+    if (emittedByPlayer &&
+        (signature == WaveSignature::DirectionalPing ||
+         signature == WaveSignature::RadialPulse ||
+         signature == WaveSignature::WhistleBeam ||
+         signature == WaveSignature::StompWave ||
+         signature == WaveSignature::EchoTrapPulse)) {
         ++m_totalPulsesEmitted;
     }
+}
+
+void AcousticSystem::emitWaterRipples(sf::Vector2f origin, float baseRadius) {
+    // Block 2.4: Water conducts sound to 2x distance and spawns concentric wave rings visible to enemies
+    const float doubledRange = baseRadius * getMaterialProperties(SurfaceMaterial::Water).distanceMultiplier;
+    const sf::Color waterCol(45, 212, 191);
+
+    for (int i = 0; i < 3; ++i) {
+        ExpandingWaveRing& ring = m_rings[m_ringCursor];
+        m_ringCursor = (m_ringCursor + 1) % m_rings.size();
+        ring.origin = origin;
+        ring.radius = 6.0f + static_cast<float>(i) * 18.0f;
+        ring.maxRadius = doubledRange * (0.55f + static_cast<float>(i) * 0.22f);
+        ring.speed = 310.0f - static_cast<float>(i) * 28.0f;
+        ring.intensity = 0.85f - static_cast<float>(i) * 0.18f;
+        ring.centerAngle = 0.0f;
+        ring.spreadAngle = 6.2831853f;
+        ring.color = waterCol;
+        ring.active = true;
+    }
+
+    m_recentEvents.push_back(AcousticEvent{
+        origin,
+        0.78f,
+        doubledRange,
+        WaveSignature::AmbientDrip,
+        m_activeFrequency,
+        true,
+        true
+    });
 }
 
 void AcousticSystem::spawnEchoTrace(
@@ -187,19 +253,23 @@ void AcousticSystem::spawnEchoTrace(
     sf::Vector2f wallTangent,
     sf::Vector2f wallNormal,
     float intensity,
-    SurfaceMaterial material
+    SurfaceMaterial material,
+    AcousticFrequency freq
 ) {
     const MaterialProperties props = getMaterialProperties(material);
     WallEchoTrace& trace = m_echoes[m_echoCursor];
     m_echoCursor = (m_echoCursor + 1) % m_echoes.size();
 
+    const float lenScale = (freq == AcousticFrequency::Low) ? 1.25f : (freq == AcousticFrequency::High ? 0.85f : 1.0f);
+    const float lifeScale = (freq == AcousticFrequency::Low) ? 1.35f : 1.0f;
+
     trace.hitPoint = hitPoint;
     trace.tangent = wallTangent;
     trace.normal = wallNormal;
-    trace.halfLength = 10.0f + 9.0f * std::min(intensity, 1.0f);
+    trace.halfLength = (10.0f + 9.0f * std::min(intensity, 1.0f)) * lenScale;
     trace.intensity = std::clamp(intensity, 0.12f, 1.0f);
     trace.age = 0.0f;
-    trace.lifetime = props.persistenceSec;
+    trace.lifetime = props.persistenceSec * lifeScale;
     trace.material = material;
     trace.active = true;
 }
@@ -210,13 +280,52 @@ std::vector<int> AcousticSystem::update(
     std::vector<AcousticResonator>* resonators,
     float resonatorChargeScale
 ) {
+    std::vector<WallSegment> mutableCopy = walls;
+    return update(dt, mutableCopy, resonators, resonatorChargeScale);
+}
+
+std::vector<int> AcousticSystem::update(
+    float dt,
+    std::vector<WallSegment>& walls,
+    std::vector<AcousticResonator>* resonators,
+    float resonatorChargeScale
+) {
     std::vector<int> newlyActivatedResonators;
 
-    // Slowly decay unactivated resonator energy over time so player must hit it with a coherent burst
+    // Block 2.5: Update AcousticResonator energy & 4-second harmonic humming lure
     if (resonators != nullptr) {
         for (auto& res : *resonators) {
             if (!res.activated && res.energy > 0.0f) {
                 res.energy = std::max(0.0f, res.energy - 0.18f * dt);
+            }
+            if (res.humTimer > 0.0f) {
+                res.humTimer = std::max(0.0f, res.humTimer - dt);
+                res.humPulseAccum += dt;
+                if (res.humPulseAccum >= 0.90f) {
+                    res.humPulseAccum = 0.0f;
+                    // Emit a humming ring and lure event from the resonator column so enemies investigate the column!
+                    ExpandingWaveRing& ring = m_rings[m_ringCursor];
+                    m_ringCursor = (m_ringCursor + 1) % m_rings.size();
+                    ring.origin = res.position;
+                    ring.radius = res.radius;
+                    ring.maxRadius = cfg::kResonatorHumRadius;
+                    ring.speed = 260.0f;
+                    ring.intensity = 0.65f;
+                    ring.centerAngle = 0.0f;
+                    ring.spreadAngle = 6.2831853f;
+                    ring.color = sf::Color(192, 132, 252);
+                    ring.active = true;
+
+                    m_recentEvents.push_back(AcousticEvent{
+                        res.position,
+                        0.72f,
+                        cfg::kResonatorHumRadius * 1.4f,
+                        WaveSignature::ResonatorHum,
+                        AcousticFrequency::Mid,
+                        true,
+                        false
+                    });
+                }
             }
         }
     }
@@ -229,20 +338,30 @@ std::vector<int> AcousticSystem::update(
         ray.prevPos = ray.pos;
         const sf::Vector2f nextPos = ray.pos + ray.dir * stepDist;
 
-        // Check if this ray energizes an AcousticResonator
+        // Check if this ray energizes an AcousticResonator & triggers its 4-second hum (Block 2.5)
         if (resonators != nullptr && ray.emittedByPlayer &&
             (ray.signature == WaveSignature::DirectionalPing ||
              ray.signature == WaveSignature::RadialPulse ||
-             ray.signature == WaveSignature::DecoyImpact)) {
+             ray.signature == WaveSignature::DecoyImpact ||
+             ray.signature == WaveSignature::WhistleBeam ||
+             ray.signature == WaveSignature::StompWave ||
+             ray.signature == WaveSignature::EchoTrapPulse)) {
             for (auto& res : *resonators) {
-                if (res.activated) continue;
                 const sf::Vector2f c = closestPointOnSegment(res.position, ray.pos, nextPos);
                 const sf::Vector2f d = res.position - c;
                 if (d.x * d.x + d.y * d.y <= res.radius * res.radius) {
-                    res.energy = std::min(1.0f, res.energy + ray.intensity * 0.14f * resonatorChargeScale);
-                    if (res.energy >= 1.0f) {
-                        res.activated = true;
-                        newlyActivatedResonators.push_back(res.id);
+                    // Block 2.5: Start 4-second resonator hum on hit
+                    if (res.humTimer <= 0.1f) {
+                        res.humPulseAccum = 0.85f;
+                    }
+                    res.humTimer = cfg::kResonatorHumDurationSec;
+
+                    if (!res.activated) {
+                        res.energy = std::min(1.0f, res.energy + ray.intensity * 0.14f * resonatorChargeScale);
+                        if (res.energy >= 1.0f) {
+                            res.activated = true;
+                            newlyActivatedResonators.push_back(res.id);
+                        }
                     }
                 }
             }
@@ -250,9 +369,9 @@ std::vector<int> AcousticSystem::update(
 
         float bestT = 2.0f;
         sf::Vector2f bestHit{};
-        const WallSegment* hitWall = nullptr;
+        WallSegment* hitWall = nullptr;
 
-        for (const auto& wall : walls) {
+        for (auto& wall : walls) {
             if (wall.isOpen) continue;
             float t = 0.0f;
             sf::Vector2f pt{};
@@ -274,13 +393,44 @@ std::vector<int> AcousticSystem::update(
             }
 
             const MaterialProperties matProps = getMaterialProperties(hitWall->material);
-            spawnEchoTrace(bestHit, wallTangent, wallNormal, ray.intensity, hitWall->material);
+            spawnEchoTrace(bestHit, wallTangent, wallNormal, ray.intensity, hitWall->material, ray.frequency);
+
+            // Block 2.3: Brittle Glass shatters when hit by a powerful impulse
+            const bool isHighPowerPulse =
+                ray.emittedByPlayer &&
+                (ray.signature == WaveSignature::RadialPulse ||
+                 ray.signature == WaveSignature::StompWave ||
+                 ray.signature == WaveSignature::EchoTrapPulse ||
+                 (ray.signature == WaveSignature::DirectionalPing && ray.intensity >= 0.85f));
+
+            if (hitWall->material == SurfaceMaterial::Glass && isHighPowerPulse) {
+                hitWall->isOpen = true;
+                ++m_shatteredGlassCount;
+                m_lastGlassShatterPos = bestHit;
+                if (hitWall->doorId != -1) {
+                    if (std::find(newlyActivatedResonators.begin(), newlyActivatedResonators.end(), hitWall->doorId) ==
+                        newlyActivatedResonators.end()) {
+                        newlyActivatedResonators.push_back(hitWall->doorId);
+                    }
+                }
+                // Ray continues right through the newly shattered glass barrier
+                ray.pos = nextPos;
+                ray.traveled += stepDist;
+                if (ray.traveled < ray.maxDistance && ray.intensity >= 0.05f) {
+                    ++m_activeRayCount;
+                } else {
+                    ray.active = false;
+                }
+                continue;
+            }
 
             // Concealed Secret Door (doorId >= 900): unseals when struck by high-energy player sonar ping or pulse
             if (hitWall->doorId >= 900 && ray.emittedByPlayer &&
                 (ray.signature == WaveSignature::DirectionalPing ||
                  ray.signature == WaveSignature::RadialPulse ||
-                 ray.signature == WaveSignature::DecoyImpact) &&
+                 ray.signature == WaveSignature::DecoyImpact ||
+                 ray.signature == WaveSignature::StompWave ||
+                 ray.signature == WaveSignature::EchoTrapPulse) &&
                 ray.intensity >= 0.35f) {
                 if (std::find(newlyActivatedResonators.begin(), newlyActivatedResonators.end(), hitWall->doorId) ==
                     newlyActivatedResonators.end()) {
@@ -288,8 +438,25 @@ std::vector<int> AcousticSystem::update(
                 }
             }
 
+            // Block 2.2: Polished Metal grants lossless reflection + up to +2 bonus reflections (+3 on High freq)
+            if (hitWall->material == SurfaceMaterial::Metal && !ray.metalBonusApplied) {
+                ray.metalBonusApplied = true;
+                const int bonus = matProps.bonusReflections + (ray.frequency == AcousticFrequency::High ? 1 : 0);
+                ray.maxReflections = static_cast<std::uint8_t>(std::min<int>(10, static_cast<int>(ray.maxReflections) + bonus));
+            }
+
+            // Block 2.4: Water conducts sound to 2x distance
+            if (hitWall->material == SurfaceMaterial::Water && !ray.waterBoostApplied) {
+                ray.waterBoostApplied = true;
+                ray.maxDistance *= matProps.distanceMultiplier;
+            }
+
             ++ray.reflections;
             ray.intensity *= matProps.reflectivity;
+            // High frequency attenuates faster on DampMoss
+            if (hitWall->material == SurfaceMaterial::DampMoss && ray.frequency == AcousticFrequency::High) {
+                ray.intensity *= 0.60f;
+            }
             ray.tint = matProps.echoColor;
 
             if (ray.reflections > ray.maxReflections || ray.intensity < 0.07f) {
@@ -339,9 +506,13 @@ std::vector<int> AcousticSystem::update(
 float AcousticSystem::consumeRayImpactAt(
     sf::Vector2f targetPos,
     float targetRadius,
-    bool& outReflectedHit
+    bool& outReflectedHit,
+    bool* outHighFreqHit
 ) noexcept {
     outReflectedHit = false;
+    if (outHighFreqHit != nullptr) {
+        *outHighFreqHit = false;
+    }
     float totalImpact = 0.0f;
     const float radSq = (targetRadius + 5.0f) * (targetRadius + 5.0f);
 
@@ -349,7 +520,10 @@ float AcousticSystem::consumeRayImpactAt(
         if (!ray.active || !ray.emittedByPlayer) continue;
         if (ray.signature != WaveSignature::DirectionalPing &&
             ray.signature != WaveSignature::RadialPulse &&
-            ray.signature != WaveSignature::DecoyImpact) {
+            ray.signature != WaveSignature::DecoyImpact &&
+            ray.signature != WaveSignature::WhistleBeam &&
+            ray.signature != WaveSignature::StompWave &&
+            ray.signature != WaveSignature::EchoTrapPulse) {
             continue;
         }
 
@@ -358,17 +532,23 @@ float AcousticSystem::consumeRayImpactAt(
         if (d.x * d.x + d.y * d.y <= radSq) {
             float weight = 0.85f;
             if (ray.signature == WaveSignature::DirectionalPing) weight = 1.25f;
+            else if (ray.signature == WaveSignature::WhistleBeam) weight = 1.15f;
+            else if (ray.signature == WaveSignature::StompWave) weight = 1.35f;
+            else if (ray.signature == WaveSignature::EchoTrapPulse) weight = 1.18f;
             else if (ray.signature == WaveSignature::DecoyImpact) weight = 1.10f;
 
             if (ray.reflections > 0) {
                 outReflectedHit = true;
                 weight *= 1.35f;
             }
+            if (ray.frequency == AcousticFrequency::High && outHighFreqHit != nullptr) {
+                *outHighFreqHit = true;
+            }
             totalImpact += ray.intensity * weight;
 
             const sf::Vector2f normal = normalizeOrZero(c - targetPos);
             const sf::Vector2f tangent{-normal.y, normal.x};
-            spawnEchoTrace(c, tangent, normal, std::min(1.0f, ray.intensity * 1.15f), SurfaceMaterial::ResonanceDoor);
+            spawnEchoTrace(c, tangent, normal, std::min(1.0f, ray.intensity * 1.15f), SurfaceMaterial::ResonanceDoor, ray.frequency);
 
             ray.active = false;
             if (m_activeRayCount > 0) --m_activeRayCount;
@@ -381,7 +561,8 @@ float AcousticSystem::consumeRayImpactAt(
 float AcousticSystem::computeTransmissionFactor(
     sf::Vector2f source,
     sf::Vector2f listener,
-    const std::vector<WallSegment>& walls
+    const std::vector<WallSegment>& walls,
+    AcousticFrequency freq
 ) noexcept {
     float factor = 1.0f;
     int hitCount = 0;
@@ -391,7 +572,14 @@ float AcousticSystem::computeTransmissionFactor(
         float t = 0.0f;
         sf::Vector2f pt{};
         if (intersectSegments(source, listener, wall.a, wall.b, t, pt)) {
-            factor *= getMaterialProperties(wall.material).transmission;
+            float trans = getMaterialProperties(wall.material).transmission;
+            // Block 3.4: Low frequency penetrates thin walls more effectively
+            if (freq == AcousticFrequency::Low) {
+                trans = std::min(0.92f, std::sqrt(trans));
+            } else if (freq == AcousticFrequency::High) {
+                trans *= 0.82f;
+            }
+            factor *= trans;
             ++hitCount;
             if (hitCount >= 4) break;
         }
@@ -400,13 +588,59 @@ float AcousticSystem::computeTransmissionFactor(
     return std::clamp(factor, 0.08f, 1.0f);
 }
 
-float AcousticSystem::queryIlluminationAt(sf::Vector2f point, sf::Vector2f playerPos) const noexcept {
+bool AcousticSystem::isInDampMossShelter(
+    sf::Vector2f pos,
+    const std::vector<WallSegment>& walls,
+    SurfaceMaterial floorMat
+) noexcept {
+    constexpr float kShelterDistSq = 56.0f * 56.0f;
+    for (const auto& w : walls) {
+        if (w.isOpen || w.material != SurfaceMaterial::DampMoss) continue;
+        const sf::Vector2f c = closestPointOnSegment(pos, w.a, w.b);
+        const sf::Vector2f d = pos - c;
+        if (d.x * d.x + d.y * d.y <= kShelterDistSq) {
+            return true;
+        }
+    }
+    if (floorMat == SurfaceMaterial::DampMoss) {
+        for (const auto& w : walls) {
+            if (w.isOpen) continue;
+            const sf::Vector2f c = closestPointOnSegment(pos, w.a, w.b);
+            const sf::Vector2f d = pos - c;
+            if (d.x * d.x + d.y * d.y <= 72.0f * 72.0f) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+float AcousticSystem::queryIlluminationAt(
+    sf::Vector2f point,
+    sf::Vector2f playerPos,
+    const std::vector<AcousticResonator>* resonators
+) const noexcept {
     float maxIllum = 0.0f;
 
     const sf::Vector2f dp = point - playerPos;
     const float distPlayerSq = dp.x * dp.x + dp.y * dp.y;
     if (distPlayerSq < 75.0f * 75.0f) {
         maxIllum = std::max(maxIllum, 1.0f - std::sqrt(distPlayerSq) / 75.0f);
+    }
+
+    // Block 2.5: Humming AcousticResonator columns illuminate a radius around themselves for 4 seconds
+    if (resonators != nullptr) {
+        for (const auto& res : *resonators) {
+            if (res.humTimer <= 0.0f) continue;
+            const sf::Vector2f dr = point - res.position;
+            const float drSq = dr.x * dr.x + dr.y * dr.y;
+            const float humR = cfg::kResonatorHumRadius;
+            if (drSq < humR * humR) {
+                const float fade = std::min(1.0f, res.humTimer / 1.0f);
+                const float prox = 1.0f - std::sqrt(drSq) / humR;
+                maxIllum = std::max(maxIllum, fade * prox * 0.92f);
+            }
+        }
     }
 
     for (const auto& echo : m_echoes) {
@@ -448,7 +682,9 @@ void AcousticSystem::render(
             if (w.isOpen) continue;
             const MaterialProperties mp = getMaterialProperties(w.material);
             sf::Color lineCol = mp.echoColor;
-            lineCol.a = ambAlpha;
+            lineCol.a = (w.material == SurfaceMaterial::Glass)
+                ? static_cast<sf::Uint8>(std::min<int>(180, ambAlpha * 2 + 40))
+                : ambAlpha;
             m_echoLines.append(sf::Vertex(w.a, lineCol));
             m_echoLines.append(sf::Vertex(w.b, lineCol));
         }
@@ -501,10 +737,10 @@ void AcousticSystem::render(
             const float rippleOffset = 3.5f + std::sin(echo.age * 8.0f) * 2.0f;
             m_echoLines.append(sf::Vertex(p1 + echo.normal * rippleOffset, rippleCol));
             m_echoLines.append(sf::Vertex(p2 + echo.normal * rippleOffset, rippleCol));
-        } else if (echo.material == SurfaceMaterial::Metal) {
-            sf::Color specCol(224, 242, 254, static_cast<sf::Uint8>(smoothAlpha * 170.0f));
-            m_echoLines.append(sf::Vertex(echo.hitPoint - echo.normal * 3.0f, specCol));
-            m_echoLines.append(sf::Vertex(echo.hitPoint + echo.normal * 3.0f, specCol));
+        } else if (echo.material == SurfaceMaterial::Metal || echo.material == SurfaceMaterial::Glass) {
+            sf::Color specCol(224, 242, 254, static_cast<sf::Uint8>(smoothAlpha * 185.0f));
+            m_echoLines.append(sf::Vertex(echo.hitPoint - echo.normal * 3.5f, specCol));
+            m_echoLines.append(sf::Vertex(echo.hitPoint + echo.normal * 3.5f, specCol));
         }
     }
 

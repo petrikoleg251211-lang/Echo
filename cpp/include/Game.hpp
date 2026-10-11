@@ -59,6 +59,7 @@ private:
     void updateMenuBackground(float dt);
     void registerNoiseAction(NoiseAction action, float dt = 1.0f, sf::Vector2f stimulusOrigin = {640.0f, 400.0f});
     void updateNoiseSystem(float dt);
+    void executePlayerStomp();
 
     // World Rendering (GameWorldRender.cpp)
     void render();

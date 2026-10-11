@@ -2,200 +2,10 @@
 
 #include <SFML/Graphics/Color.hpp>
 #include <algorithm>
-#include <cmath>
+#include <cstddef>
 #include <cstdint>
 
 namespace echo {
-
-enum class SurfaceMaterial : std::uint8_t {
-    Stone = 0,         // Cold slate-blue stone masonry (82% reflectivity, 42% transmission)
-    Concrete = 1,      // Dense structural concrete (74% reflectivity, 50% transmission)
-    Metal = 2,         // High-resonance steel plating (94% reflectivity, 72% transmission)
-    Water = 3,         // Subterranean flooded basin (64% reflectivity, 60% transmission)
-    DampMoss = 4,      // Sound-absorbing organic moss (36% reflectivity, 30% transmission)
-    ResonanceDoor = 5  // Harmonic lock gate (90% reflectivity, 45% transmission when sealed)
-};
-
-enum class WaveSignature : std::uint8_t {
-    FootstepSneak = 0,
-    FootstepWalk = 1,
-    FootstepSprint = 2,
-    DirectionalPing = 3,
-    RadialPulse = 4,
-    DecoyImpact = 5,
-    SwitchClunk = 6,
-    MechanismClunk = 6,
-    EnemyTremor = 7,
-    AmbientDrip = 8,
-    ResonatorHum = 9,
-    ShaleCrack = 10
-};
-
-// EchoLabyrinth 4.0/5.0: Room-Based Roguelike Chamber Categories
-enum class RoomType : std::uint8_t {
-    Start = 0,      // Entry Sanctuary (Safe, Checkpoint, Tutorial Lore)
-    Combat = 1,     // Standard Acoustic Hunter encounter (locks doors until cleared)
-    Treasure = 2,   // Harmonic Relic Vault (contains a free Relic Pedestal)
-    Puzzle = 3,     // Acoustic Resonator / Mirror alignment puzzle chamber
-    Shop = 4,       // Acoustic Quartermaster (spend Echo Shards on Relics, Repairs, Decoys)
-    Secret = 5,     // Hidden fracture chamber (unsealed by pinging hollow wall with sonar)
-    Challenge = 6,  // High-risk multi-wave arena (locks doors, 2 waves + high Shard/Relic reward)
-    Elite = 6,      // Alias for Challenge/Elite chamber
-    Sanctuary = 7,  // Acoustic Calibration Shrine (Checkpoint + free +2 Hull Integrity restore)
-    Boss = 8,       // The Choir Sovereign Lair (3-phase acoustic boss encounter)
-    FinalExit = 9   // Resonance Ascent Conduit (unlocked after defeating the Boss)
-};
-
-// 4-Directional Room Connections (Binding of Isaac grid style)
-enum class CardinalDir : std::uint8_t {
-    North = 0,
-    East = 1,
-    South = 2,
-    West = 3
-};
-
-inline constexpr CardinalDir oppositeDir(CardinalDir dir) noexcept {
-    switch (dir) {
-        case CardinalDir::North: return CardinalDir::South;
-        case CardinalDir::East:  return CardinalDir::West;
-        case CardinalDir::South: return CardinalDir::North;
-        case CardinalDir::West:  return CardinalDir::East;
-    }
-    return CardinalDir::South;
-}
-
-inline constexpr int dirDeltaX(CardinalDir dir) noexcept {
-    switch (dir) {
-        case CardinalDir::East:  return 1;
-        case CardinalDir::West:  return -1;
-        default:                 return 0;
-    }
-}
-
-inline constexpr int dirDeltaY(CardinalDir dir) noexcept {
-    switch (dir) {
-        case CardinalDir::North: return -1;
-        case CardinalDir::South: return 1;
-        default:                 return 0;
-    }
-}
-
-// EchoLabyrinth 4.0/5.0: Passive & Active Acoustic Relics / Upgrades
-enum class RelicId : std::uint8_t {
-    HarmonicAmplifier = 0, // +35% Sonar Range, +20% Ray Count, +25% Harmonic Damage
-    MossTreadBoots = 1,    // -45% Footstep Loudness, +15% Walk/Sneak Speed, Brittle Shale Immunity
-    PrismaticMirror = 2,   // +2 Max Ray Reflections, reflected rays deal +50% bonus damage
-    KineticCapacitor = 3,  // +35% Stamina Regen, -25% Ability Cooldowns
-    ResonanceCapacitor = 3,// Alias for KineticCapacitor
-    FocusedTransducer = 4, // Focused Ping [LMB] fires twin harmonic beams with +45% lethality
-    SubharmonicVisor = 5,  // Reveals Secret Rooms on map & highlights enemies in dark at close range
-    PiezoArmorCore = 6,    // +2 Max Hull Integrity (HP) & emits retaliatory shockwave when hit
-    EchoSiphonCoil = 7,    // Sonar hits on enemies restore +6 Stamina & charge crystals 2x faster
-    PhantomDecoyRig = 8,   // +3 Decoy Stones & Decoys emit 3x pulsing waves that damage nearby hunters
-    SilentStep = 9,        // Block 1.4 Ghost Clear Relic: +18% Movement Speed & -35% Noise Meter gain
-    Count = 10
-};
-
-enum class RelicRarity : std::uint8_t {
-    Common = 0,
-    Uncommon = 1,
-    Rare = 2,
-    Relic = 3
-};
-
-struct RelicSpec {
-    RelicId id;
-    const char* name;
-    const char* effectSummary;
-    RelicRarity rarity;
-    int shopCostShards;
-    sf::Color tint;
-};
-
-inline RelicSpec getRelicSpec(RelicId id) noexcept {
-    switch (id) {
-        case RelicId::HarmonicAmplifier:
-            return {id, "HARMONIC AMPLIFIER", "+35% SONAR RANGE, +20% RAYS, +25% SONAR DMG", RelicRarity::Uncommon, 30, sf::Color(56, 189, 248)};
-        case RelicId::MossTreadBoots:
-            return {id, "MOSS-TREAD BOOTS", "-45% STEP SOUND, +15% SPEED, SHALE IMMUNITY", RelicRarity::Common, 22, sf::Color(52, 211, 153)};
-        case RelicId::PrismaticMirror:
-            return {id, "PRISMATIC MIRROR", "+2 RAY BOUNCES & +50% REFLECTED RAY DAMAGE", RelicRarity::Rare, 40, sf::Color(167, 139, 250)};
-        case RelicId::KineticCapacitor:
-            return {id, "KINETIC CAPACITOR", "+35% STAMINA REGEN & -25% SONAR COOLDOWNS", RelicRarity::Common, 25, sf::Color(250, 204, 21)};
-        case RelicId::FocusedTransducer:
-            return {id, "FOCUSED TRANSDUCER", "TWIN HARMONIC PING BEAMS & +45% PING DAMAGE", RelicRarity::Relic, 50, sf::Color(244, 63, 94)};
-        case RelicId::SubharmonicVisor:
-            return {id, "SUBHARMONIC VISOR", "REVEALS SECRET ROOMS ON MAP & +DARK VISION", RelicRarity::Rare, 42, sf::Color(45, 212, 191)};
-        case RelicId::PiezoArmorCore:
-            return {id, "PIEZO ARMOR CORE", "+2 MAX HULL INTEGRITY & RETALIATORY PULSE", RelicRarity::Rare, 45, sf::Color(248, 113, 113)};
-        case RelicId::EchoSiphonCoil:
-            return {id, "ECHO SIPHON COIL", "SONAR HITS RESTORE STAMINA & 2X CRYSTAL CHARGE", RelicRarity::Uncommon, 30, sf::Color(125, 211, 252)};
-        case RelicId::PhantomDecoyRig:
-            return {id, "PHANTOM DECOY RIG", "+3 DECOYS & LETHAL RESONANCE DECOY BLAST", RelicRarity::Rare, 38, sf::Color(216, 180, 254)};
-        case RelicId::SilentStep:
-        default:
-            return {RelicId::SilentStep, "SILENT STEP ACCELERATOR", "GHOST CLEAR RELIC: +18% SPEED & -35% NOISE METER GAIN", RelicRarity::Relic, 40, sf::Color(110, 231, 183)};
-    }
-}
-
-// ============================================================================
-// BLOCK 1: Sound as Risk Resource — Noise Meter & Silence System (0..100)
-// ============================================================================
-enum class NoiseTier : std::uint8_t {
-    Quiet = 0,    // [0.0, 30.0]:  Enemies remain in Patrol; eligible for Ghost Clear (x1.5 Shards)
-    Audible = 1,  // (30.0, 60.0): Enemies in current/adjacent open rooms transition to InvestigateSound
-    Loud = 2,     // [60.0, 85.0): Enemies converge directly on the sound origin
-    Scream = 3    // [85.0, 100.0]: All enemies within 2 grid rooms receive priority hunt lock on player
-};
-
-enum class NoiseAction : std::uint8_t {
-    StepSneak = 0,       // +2 / sec
-    StepWalk = 1,        // +8 / sec
-    StepSprint = 2,      // +25 / sec
-    DirectionalPing = 3, // +12 instant
-    RadialPulse = 4,     // +30 instant
-    DecoyImpact = 5,     // +15 instant at impact point
-    CombatHit = 6,       // +10 instant per hit
-    SilenceDecay = 7     // -10 / sec in silence
-};
-
-enum class AppState : std::uint8_t {
-    MainMenu = 0,
-    Playing = 1,
-    Paused = 2,
-    Settings = 3,
-    Controls = 4,
-    GameOver = 5,
-    Victory = 6
-};
-
-struct MaterialProperties {
-    float reflectivity;      // [0.0, 1.0] fraction of energy retained after reflection
-    float transmission;      // [0.0, 1.0] fraction of sound loudness transmitted through wall to AI
-    float persistenceSec;    // How long the illuminated wall trace stays visible
-    float wallThickness;     // Visual bevel thickness in world units
-    sf::Color echoColor;     // Primary acoustic illumination color
-    sf::Color fillTint;      // Dark structural fill color when illuminated
-    const char* label;
-};
-
-inline MaterialProperties getMaterialProperties(SurfaceMaterial mat) noexcept {
-    switch (mat) {
-        case SurfaceMaterial::Stone:
-            return {0.82f, 0.42f, 4.0f, 10.0f, sf::Color(56, 189, 248), sf::Color(15, 32, 52), "Stone Masonry"};
-        case SurfaceMaterial::Concrete:
-            return {0.74f, 0.50f, 3.2f, 11.0f, sf::Color(125, 211, 252), sf::Color(22, 34, 48), "Reinforced Concrete"};
-        case SurfaceMaterial::Metal:
-            return {0.94f, 0.72f, 5.4f, 8.0f, sf::Color(34, 211, 238), sf::Color(18, 42, 56), "Forged Steel"};
-        case SurfaceMaterial::Water:
-            return {0.64f, 0.60f, 2.8f, 6.0f, sf::Color(45, 212, 191), sf::Color(10, 38, 44), "Subterranean Water"};
-        case SurfaceMaterial::DampMoss:
-            return {0.36f, 0.30f, 1.7f, 12.0f, sf::Color(52, 211, 153), sf::Color(12, 34, 28), "Damp Acoustic Moss"};
-        case SurfaceMaterial::ResonanceDoor:
-            return {0.90f, 0.45f, 4.8f, 9.0f, sf::Color(167, 139, 250), sf::Color(36, 22, 62), "Resonance Gate"};
-    }
-    return {0.82f, 0.42f, 4.0f, 10.0f, sf::Color(56, 189, 248), sf::Color(15, 32, 52), "Stone Masonry"};
-}
 
 namespace cfg {
     constexpr unsigned int kDefaultWindowWidth = 1280;
@@ -204,59 +14,122 @@ namespace cfg {
     constexpr float kWorldHeight = 800.0f;
     constexpr float kFixedTimeStep = 1.0f / 60.0f;
 
-    // Pre-allocated simulation pool sizes (zero per-frame heap allocations)
-    constexpr std::size_t kMaxActiveRays = 2560;
-    constexpr std::size_t kMaxEchoTraces = 2048;
+    // Pre-allocated pool capacities (zero heap allocations during gameplay loop)
+    constexpr std::size_t kMaxActiveRays = 2048;
+    constexpr std::size_t kMaxEchoTraces = 2400;
     constexpr std::size_t kMaxWaveRings = 48;
-    constexpr std::uint8_t kDefaultMaxReflections = 3;
-
-    // Default procedural roguelike run size (configurable 15..60 rooms)
-    constexpr std::size_t kDefaultRunRoomCount = 32;
 
     // Player physical & movement parameters
     constexpr float kPlayerRadius = 12.0f;
-    constexpr float kEnemyRadius = 14.0f;
-    constexpr float kSpeedSneak = 86.0f;
-    constexpr float kSpeedWalk = 154.0f;
-    constexpr float kSpeedSprint = 238.0f;
+    constexpr float kSpeedSneak = 98.0f;
+    constexpr float kSpeedWalk = 182.0f;
+    constexpr float kSpeedSprint = 292.0f;
 
     // Ability cooldowns (seconds)
-    constexpr float kCooldownPing = 0.48f;
-    constexpr float kCooldownRadialPulse = 1.95f;
-    constexpr float kCooldownDecoy = 2.20f;
+    constexpr float kCooldownPing = 0.36f;
+    constexpr float kCooldownRadialPulse = 1.45f;
+    constexpr float kCooldownDecoy = 0.80f;
+    constexpr float kCooldownWhistle = 0.42f;
+    constexpr float kCooldownStomp = 1.65f;
+    constexpr float kCooldownEchoTrap = 2.20f;
 
-    // Block 1: Noise & Silence tuning parameters
+    // Block 3: Extended Acoustic Arsenal parameters
+    constexpr float kWhistleSpreadRad = 0.26179939f; // 15 degrees narrow beam
+    constexpr float kWhistleRange = 840.0f;
+    constexpr float kStompRadius = 250.0f;
+    constexpr float kStompKnockback = 68.0f;
+    constexpr float kEchoTrapDelaySec = 3.0f;
+    constexpr int kDefaultEchoTrapCount = 3;
+
+    // Block 2: Resonator Column hum duration & radius
+    constexpr float kResonatorHumDurationSec = 4.0f;
+    constexpr float kResonatorHumRadius = 185.0f;
+
+    // Acoustic defaults
+    constexpr std::uint8_t kDefaultMaxReflections = 3;
+    constexpr float kEnemyRadius = 14.0f;
+
+    // Roguelike procedural run parameters
+    constexpr std::size_t kDefaultRunRoomCount = 32;
+
+    // Block 1 & Block 2 & Block 3: Sound as Risk Resource — Noise Meter (0..100) & Silence parameters
     namespace noise {
         constexpr float kMinNoise = 0.0f;
         constexpr float kMaxNoise = 100.0f;
 
-        constexpr float kStepSneakPerSec = 2.0f;
-        constexpr float kStepWalkPerSec = 8.0f;
-        constexpr float kStepSprintPerSec = 25.0f;
-        constexpr float kPingNoise = 12.0f;
-        constexpr float kRadialPulseNoise = 30.0f;
-        constexpr float kDecoyImpactNoise = 15.0f;
-        constexpr float kCombatHitNoise = 10.0f;
-        constexpr float kSilenceDecayPerSec = 10.0f;
+        // Per-second continuous movement noise rates
+        constexpr float kRateSneakPerSec = 2.0f;
+        constexpr float kRateWalkPerSec = 8.0f;
+        constexpr float kRateSprintPerSec = 25.0f;
+        constexpr float kDecaySilencePerSec = 10.0f;
 
-        // Exact half-open / closed interval boundaries:
-        // Quiet:   [0.0, 30.0]  (<= kThresholdAudible; eligible for Ghost Clear)
-        // Audible: (30.0, 60.0) (>  kThresholdAudible && < kThresholdLoud)
-        // Loud:    [60.0, 85.0) (>= kThresholdLoud    && < kThresholdScream)
-        // Scream:  [85.0, 100.0](>= kThresholdScream)
+        // Instantaneous action noise spikes
+        constexpr float kCostWhistle = 5.0f;       // Block 3.1: Narrow 15-deg Whistle (+5)
+        constexpr float kCostPing = 12.0f;         // Block 1.1: Directional Ping (+12)
+        constexpr float kCostWaterStep = 15.0f;    // Block 2.4: Footstep on Water (+15)
+        constexpr float kCostDecoyImpact = 15.0f;  // Block 1.1: Decoy impact (+15)
+        constexpr float kCostCombatHit = 10.0f;    // Block 1.1: Combat hit (+10)
+        constexpr float kCostRadialPulse = 30.0f;  // Block 1.1: Radial Pulse (+30)
+        constexpr float kCostStomp = 35.0f;        // Block 3.2: Wide Stomp (+35)
+        constexpr float kCostGlassShatter = 40.0f; // Block 2.3: Shattering Glass wall (+40)
+        constexpr float kCostEchoSwarmAmp = 12.0f; // Block 4.4: EchoSwarm sound amplification (+12)
+
+        // Noise Tier thresholds:
+        //   Quiet   : [0.0, 30.0]   (Ghost Clear requires peak noise <= 30.0)
+        //   Audible : (30.0, 60.0)
+        //   Loud    : [60.0, 85.0)
+        //   Scream  : [85.0, 100.0]
         constexpr float kThresholdAudible = 30.0f;
         constexpr float kThresholdLoud = 60.0f;
         constexpr float kThresholdScream = 85.0f;
 
-        constexpr float kCrossRoomAttenuation = 0.50f; // 50% attenuation per open doorway hop
+        // Cross-room attenuation through open doors (50% per doorway hop)
+        constexpr float kCrossRoomAttenuation = 0.50f;
+
+        // Ghost Clear reward multiplier when room is cleared without exceeding 30 noise
         constexpr float kGhostClearShardMultiplier = 1.50f;
     } // namespace noise
 } // namespace cfg
 
+// Block 1: Noise Tier classification
+// Exact intervals:
+//   Quiet   : [0.0, 30.0]
+//   Audible : (30.0, 60.0)
+//   Loud    : [60.0, 85.0)
+//   Scream  : [85.0, 100.0]
+enum class NoiseTier : std::uint8_t {
+    Quiet = 0,   // [0.0, 30.0]   Patrol only (Ghost Clear eligible)
+    Audible = 1, // (30.0, 60.0)  Adjacent enemies transition to Investigate
+    Loud = 2,    // [60.0, 85.0)  Enemies converge on sound source
+    Scream = 3   // [85.0, 100.0] All enemies within 2 grid rooms get priority hunt lock on player
+};
+
+enum class NoiseAction : std::uint8_t {
+    StepSneak = 0,
+    StepWalk = 1,
+    StepSprint = 2,
+    DirectionalPing = 3,
+    RadialPulse = 4,
+    DecoyImpact = 5,
+    CombatHit = 6,
+    SilenceDecay = 7,
+    WhistlePing = 8,
+    StompImpact = 9,
+    GlassShatter = 10,
+    WaterSplash = 11,
+    EchoSwarmAmplify = 12
+};
+
 inline constexpr NoiseTier classifyNoiseTier(float noiseLevel) noexcept {
-    if (noiseLevel >= cfg::noise::kThresholdScream) return NoiseTier::Scream;
-    if (noiseLevel >= cfg::noise::kThresholdLoud)   return NoiseTier::Loud;
-    if (noiseLevel >  cfg::noise::kThresholdAudible) return NoiseTier::Audible;
+    if (noiseLevel >= cfg::noise::kThresholdScream) {
+        return NoiseTier::Scream;
+    }
+    if (noiseLevel >= cfg::noise::kThresholdLoud) {
+        return NoiseTier::Loud;
+    }
+    if (noiseLevel > cfg::noise::kThresholdAudible) {
+        return NoiseTier::Audible;
+    }
     return NoiseTier::Quiet;
 }
 
@@ -270,28 +143,247 @@ inline constexpr const char* noiseTierName(NoiseTier tier) noexcept {
     return "QUIET";
 }
 
-inline float computeNoiseActionDelta(NoiseAction action, float dt = 1.0f, float gainMultiplier = 1.0f) noexcept {
-    switch (action) {
-        case NoiseAction::StepSneak:       return cfg::noise::kStepSneakPerSec * dt * gainMultiplier;
-        case NoiseAction::StepWalk:        return cfg::noise::kStepWalkPerSec * dt * gainMultiplier;
-        case NoiseAction::StepSprint:      return cfg::noise::kStepSprintPerSec * dt * gainMultiplier;
-        case NoiseAction::DirectionalPing: return cfg::noise::kPingNoise * gainMultiplier;
-        case NoiseAction::RadialPulse:     return cfg::noise::kRadialPulseNoise * gainMultiplier;
-        case NoiseAction::DecoyImpact:     return cfg::noise::kDecoyImpactNoise * gainMultiplier;
-        case NoiseAction::CombatHit:       return cfg::noise::kCombatHitNoise * gainMultiplier;
-        case NoiseAction::SilenceDecay:    return -cfg::noise::kSilenceDecayPerSec * dt;
-    }
-    return 0.0f;
-}
-
+// Deterministic noise transition function (used by both runtime Game and --self-test)
 inline float applyNoiseAction(
     float currentNoise,
     NoiseAction action,
     float dt = 1.0f,
     float gainMultiplier = 1.0f
 ) noexcept {
-    const float next = currentNoise + computeNoiseActionDelta(action, dt, gainMultiplier);
-    return std::clamp(next, cfg::noise::kMinNoise, cfg::noise::kMaxNoise);
+    float delta = 0.0f;
+    switch (action) {
+        case NoiseAction::StepSneak:
+            delta = cfg::noise::kRateSneakPerSec * dt * gainMultiplier;
+            break;
+        case NoiseAction::StepWalk:
+            delta = cfg::noise::kRateWalkPerSec * dt * gainMultiplier;
+            break;
+        case NoiseAction::StepSprint:
+            delta = cfg::noise::kRateSprintPerSec * dt * gainMultiplier;
+            break;
+        case NoiseAction::DirectionalPing:
+            delta = cfg::noise::kCostPing * gainMultiplier;
+            break;
+        case NoiseAction::RadialPulse:
+            delta = cfg::noise::kCostRadialPulse * gainMultiplier;
+            break;
+        case NoiseAction::DecoyImpact:
+            delta = cfg::noise::kCostDecoyImpact * gainMultiplier;
+            break;
+        case NoiseAction::CombatHit:
+            delta = cfg::noise::kCostCombatHit * gainMultiplier;
+            break;
+        case NoiseAction::SilenceDecay:
+            delta = -cfg::noise::kDecaySilencePerSec * dt * gainMultiplier;
+            break;
+        case NoiseAction::WhistlePing:
+            delta = cfg::noise::kCostWhistle * gainMultiplier;
+            break;
+        case NoiseAction::StompImpact:
+            delta = cfg::noise::kCostStomp * gainMultiplier;
+            break;
+        case NoiseAction::GlassShatter:
+            delta = cfg::noise::kCostGlassShatter * gainMultiplier;
+            break;
+        case NoiseAction::WaterSplash:
+            delta = cfg::noise::kCostWaterStep * gainMultiplier;
+            break;
+        case NoiseAction::EchoSwarmAmplify:
+            delta = cfg::noise::kCostEchoSwarmAmp * gainMultiplier;
+            break;
+    }
+    return std::clamp(currentNoise + delta, cfg::noise::kMinNoise, cfg::noise::kMaxNoise);
+}
+
+enum class AppState : std::uint8_t {
+    MainMenu = 0,
+    Playing = 1,
+    Paused = 2,
+    Settings = 3,
+    Controls = 4,
+    GameOver = 5,
+    Victory = 6
+};
+
+enum class MovementStance : std::uint8_t {
+    Sneak = 0,
+    Walk = 1,
+    Sprint = 2
+};
+
+// Block 3.4: Player Sonar Frequency Tuning (1 = Low, 2 = Mid, 3 = High)
+enum class AcousticFrequency : std::uint8_t {
+    Low = 0,  // Penetrates thin walls, longer persistence, heavy resonance vs armored targets
+    Mid = 1,  // Balanced standard frequency
+    High = 2  // Sharp detail, +1 reflection on metal, unmasks Mimics & disrupts EchoSwarms
+};
+
+inline constexpr const char* frequencyName(AcousticFrequency freq) noexcept {
+    switch (freq) {
+        case AcousticFrequency::Low:  return "LOW [1] (SUB-BASS)";
+        case AcousticFrequency::Mid:  return "MID [2] (STANDARD)";
+        case AcousticFrequency::High: return "HIGH [3] (ULTRASONIC)";
+    }
+    return "MID [2]";
+}
+
+enum class SurfaceMaterial : std::uint8_t {
+    Stone = 0,
+    Concrete = 1,
+    Metal = 2,
+    Water = 3,
+    DampMoss = 4,
+    ResonanceDoor = 5,
+    Glass = 6,
+    Count = 7
+};
+
+enum class WaveSignature : std::uint8_t {
+    FootstepSneak = 0,
+    FootstepWalk = 1,
+    FootstepSprint = 2,
+    DirectionalPing = 3,
+    RadialPulse = 4,
+    DecoyImpact = 5,
+    MechanismClunk = 6,
+    EnemyTremor = 7,
+    AmbientDrip = 8,
+    ShaleCrack = 9,
+    ResonatorHum = 10,
+    WhistleBeam = 11,
+    StompWave = 12,
+    EchoTrapPulse = 13,
+    GlassShatterWave = 14
+};
+
+// 4-Directional Cardinal Topology for Room-Based Roguelike Progression
+enum class CardinalDir : std::uint8_t {
+    North = 0,
+    East = 1,
+    South = 2,
+    West = 3
+};
+
+inline constexpr CardinalDir oppositeDir(CardinalDir d) noexcept {
+    switch (d) {
+        case CardinalDir::North: return CardinalDir::South;
+        case CardinalDir::East:  return CardinalDir::West;
+        case CardinalDir::South: return CardinalDir::North;
+        case CardinalDir::West:  return CardinalDir::East;
+    }
+    return CardinalDir::South;
+}
+
+inline constexpr int dirDeltaX(CardinalDir d) noexcept {
+    switch (d) {
+        case CardinalDir::East:  return 1;
+        case CardinalDir::West:  return -1;
+        default:                 return 0;
+    }
+}
+
+inline constexpr int dirDeltaY(CardinalDir d) noexcept {
+    switch (d) {
+        case CardinalDir::North: return -1;
+        case CardinalDir::South: return 1;
+        default:                 return 0;
+    }
+}
+
+// 10 Distinct Roguelike Chamber Archetypes
+enum class RoomType : std::uint8_t {
+    Start = 0,
+    Combat = 1,
+    Treasure = 2,
+    Secret = 3,
+    Puzzle = 4,
+    Sanctuary = 5,
+    Shop = 6,
+    Elite = 7,
+    Boss = 8,
+    FinalExit = 9
+};
+
+// 9 Collectible Acoustic Relics / Upgrades (including Block 1 SilentStep accelerator)
+enum class RelicId : std::uint8_t {
+    HarmonicAmplifier = 0,  // +35% Sonar Ping & Pulse range and brightness
+    MossTreadBoots = 1,     // -45% Footstep noise radius & immunity to Brittle Shale
+    PrismaticMirror = 2,    // +2 Wall reflections & +45% reflected ray damage
+    PiezoArmorCore = 3,     // +2 Max Hull Integrity & retaliatory shockwave when hit
+    PhantomDecoyRig = 4,    // +3 Decoy capacity & Decoy impact emits damaging sonar shrapnel
+    ResonanceCapacitor = 5, // -25% Ping/Pulse cooldowns & +35% Stamina regeneration
+    SubharmonicVisor = 6,   // Reveals Secret Rooms on map & boosts passive wall aura
+    EchoSiphonCoil = 7,     // Sonar hits on enemies restore Stamina & charge resonators 2x faster
+    SilentStep = 8,         // Block 1.4 Ghost Clear reward: -35% global noise generation & +18% movement speed
+    Count = 9
+};
+
+struct RelicSpec {
+    RelicId id;
+    const char* name;
+    const char* effectSummary;
+    sf::Color tint;
+    int shopCostShards;
+};
+
+inline RelicSpec getRelicSpec(RelicId id) noexcept {
+    switch (id) {
+        case RelicId::HarmonicAmplifier:
+            return {id, "HARMONIC AMPLIFIER", "+35% SONAR RANGE & WAVE INTENSITY", sf::Color(56, 189, 248), 25};
+        case RelicId::MossTreadBoots:
+            return {id, "MOSS-TREAD BOOTS", "-45% STEP NOISE & SHALE IMMUNITY", sf::Color(52, 211, 153), 22};
+        case RelicId::PrismaticMirror:
+            return {id, "PRISMATIC MIRROR", "+2 WALL REFLECTIONS & +45% BOUNCE DMG", sf::Color(165, 243, 252), 28};
+        case RelicId::PiezoArmorCore:
+            return {id, "PIEZO ARMOR CORE", "+2 MAX HULL INTEGRITY & RETALIATION WAVE", sf::Color(251, 191, 36), 30};
+        case RelicId::PhantomDecoyRig:
+            return {id, "PHANTOM DECOY RIG", "+3 DECOYS & HIGH-ENERGY DECOY SHRAPNEL", sf::Color(192, 132, 252), 24};
+        case RelicId::ResonanceCapacitor:
+            return {id, "RESONANCE CAPACITOR", "-25% SONAR COOLDOWN & +35% STAMINA REGEN", sf::Color(45, 212, 191), 26};
+        case RelicId::SubharmonicVisor:
+            return {id, "SUBHARMONIC VISOR", "REVEALS SECRET ROOMS & PASSIVE AURA", sf::Color(244, 114, 182), 25};
+        case RelicId::EchoSiphonCoil:
+            return {id, "ECHO SIPHON COIL", "SONAR HITS RESTORE STAMINA & 2X RESONATOR CHARGE", sf::Color(129, 140, 248), 26};
+        case RelicId::SilentStep:
+        default:
+            return {id, "SILENT STEP", "-35% NOISE GENERATION & +18% STEALTH SPEED", sf::Color(110, 231, 183), 32};
+    }
+}
+
+struct MaterialProperties {
+    float reflectivity;         // Fraction of wave energy retained after bounce
+    float transmission;         // Fraction of sound energy that passes through wall to AI listeners
+    float persistenceSec;       // How long wall echo trace remains visible
+    float wallThickness;        // Visual thickness of 2.5D wall extrusion in pixels
+    int bonusReflections;       // Block 2.2: Additional reflections granted by polished surfaces (Metal = +2)
+    float distanceMultiplier;   // Block 2.4: Propagation distance multiplier on contact (Water = 2.0x)
+    sf::Color echoColor;        // Primary sonar highlight color
+    sf::Color fillTint;         // Extruded wall body tint
+    const char* displayName;
+};
+
+inline MaterialProperties getMaterialProperties(SurfaceMaterial mat) noexcept {
+    switch (mat) {
+        case SurfaceMaterial::Stone:
+            return {0.82f, 0.24f, 3.0f, 13.0f, 0, 1.0f, sf::Color(56, 189, 248), sf::Color(24, 58, 88), "SLATE STONE"};
+        case SurfaceMaterial::Concrete:
+            return {0.76f, 0.30f, 2.7f, 14.0f, 0, 1.0f, sf::Color(148, 163, 184), sf::Color(42, 54, 72), "REINFORCED CONCRETE"};
+        case SurfaceMaterial::Metal:
+            // Block 2.2: Polished Metal mirrors — lossless reflection (1.0f) & up to +2 bonus reflections
+            return {1.00f, 0.48f, 3.9f, 11.0f, 2, 1.0f, sf::Color(165, 243, 252), sf::Color(45, 88, 115), "POLISHED METAL"};
+        case SurfaceMaterial::Water:
+            // Block 2.4: Water — conducts sound to 2x distance
+            return {0.72f, 0.56f, 2.4f, 8.0f,  0, 2.0f, sf::Color(45, 212, 191), sf::Color(16, 68, 78), "STAGNANT WATER"};
+        case SurfaceMaterial::DampMoss:
+            // Block 2.1: Absorbing DampMoss / Foam — reflection attenuated by 80% (reflectivity = 0.20f)
+            return {0.20f, 0.14f, 1.5f, 15.0f, 0, 1.0f, sf::Color(52, 211, 153), sf::Color(16, 58, 44), "DAMP MOSS"};
+        case SurfaceMaterial::ResonanceDoor:
+            return {0.92f, 0.35f, 3.4f, 12.0f, 0, 1.0f, sf::Color(192, 132, 252), sf::Color(68, 38, 102), "RESONANCE GATE"};
+        case SurfaceMaterial::Glass:
+        default:
+            // Block 2.3: Brittle Glass — semi-transparent to sound until shattered by high-energy pulse (+40 noise)
+            return {0.62f, 0.72f, 2.6f, 7.0f,  1, 1.0f, sf::Color(224, 242, 254), sf::Color(80, 135, 170), "BRITTLE GLASS"};
+    }
 }
 
 } // namespace echo

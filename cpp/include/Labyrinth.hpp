@@ -11,11 +11,15 @@
 namespace echo {
 
 enum class EnemyVariant : std::uint8_t {
-    Stalker = 0,     // Standard Acoustic Hunter (balanced speed, investigates sounds)
-    Warden = 1,      // Heavy Armored Warden (slow, high HP, emits periodic floor tremors)
-    Shrieker = 2,    // Fast Sonic Shrieker (high sensitivity, fires ranged SonicBolts)
-    Phantom = 3,     // Phase Phantom (fast, takes bonus damage from reflected sonar rays)
-    AbyssalBoss = 4  // The Choir Sovereign (3-phase boss with radial shockwaves & bolt volleys)
+    Stalker = 0,       // Standard Acoustic Hunter (balanced speed, investigates sounds)
+    Warden = 1,        // Heavy Armored Warden (slow, high HP, emits periodic floor tremors)
+    Shrieker = 2,      // Fast Sonic Shrieker (high sensitivity, fires ranged SonicBolts)
+    Phantom = 3,       // Phase Phantom (fast, takes bonus damage from reflected sonar rays)
+    AbyssalBoss = 4,   // The Choir Sovereign (3-phase boss with radial shockwaves & bolt volleys)
+    SilentStalker = 5, // Block 4.1: Emits zero passive tremors while moving; only visible via sonar; inhales 0.5s before attack
+    DeafBrute = 6,     // Block 4.2: Deaf to airborne sounds; only reacts to ground vibrations (Sprint, Stomp, RadialPulse, ShaleCrack)
+    Mimic = 7,         // Block 4.3: Disguised as resonator crystal emitting lure waves; unmasks on High-freq/Whistle scan or close approach
+    EchoSwarm = 8      // Block 4.4: Acoustic parasite swarm; repeats & amplifies nearby player sounds (+12 noise) to alert other hunters
 };
 
 enum class PropType : std::uint8_t {

@@ -11,6 +11,14 @@ float distSq2D(sf::Vector2f a, sf::Vector2f b) noexcept {
     const float dy = b.y - a.y;
     return dx * dx + dy * dy;
 }
+
+sf::Vector2f closestPointOnSegGame(sf::Vector2f p, sf::Vector2f a, sf::Vector2f b) noexcept {
+    const sf::Vector2f ab = b - a;
+    const float lenSq = ab.x * ab.x + ab.y * ab.y;
+    if (lenSq < 1e-6f) return a;
+    const float t = std::clamp(((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / lenSq, 0.0f, 1.0f);
+    return a + ab * t;
+}
 } // namespace
 
 Game::Game(const std::string& exeDir)
@@ -163,8 +171,6 @@ void Game::enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild
     m_noiseIntrusionCooldown = 4.0f;
 
     if (!room.cleared && room.noiseIntrusionActive) {
-        // Room was previously breached by an adjacent hunter; respawn the single intruder
-        // instead of resetting the room's original multi-enemy encounter waves.
         m_enemies.clear();
         const sf::Vector2f entryPos = Labyrinth::spawnPositionForEntry(room.pendingNoiseAlertDir);
         EnemyAI intruder;
@@ -172,7 +178,7 @@ void Game::enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild
             {entryPos, spawnPos, {640.0f, 400.0f}},
             EnemyVariant::Stalker
         );
-        intruder.applyNoiseTierStimulus(spawnPos, NoiseTier::Loud);
+        intruder.applyNoiseTierStimulus(spawnPos, NoiseTier::Loud, true);
         m_enemies.push_back(std::move(intruder));
         m_labyrinth.setCombatLock(roomId, true);
         m_statusBannerText = "INTRUDER STILL PROWLING CHAMBER — DISRUPT HUNTER TO UNSEAL!";
@@ -185,7 +191,7 @@ void Game::enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild
             const sf::Vector2f doorwayOrigin = Labyrinth::spawnPositionForEntry(room.pendingNoiseAlertDir);
             for (auto& enemy : m_enemies) {
                 if (enemy.isActive()) {
-                    enemy.applyNoiseTierStimulus(doorwayOrigin, leakedTier);
+                    enemy.applyNoiseTierStimulus(doorwayOrigin, leakedTier, true);
                 }
             }
             room.pendingNoiseAlertLevel = 0.0f;
@@ -223,6 +229,7 @@ void Game::startNewGame(std::uint32_t customSeed) {
     m_loreDisplayTimer = 0.0f;
     m_showMinimap = false;
     m_acoustics.setMaxReflections(cfg::kDefaultMaxReflections);
+    m_acoustics.setActiveFrequency(AcousticFrequency::Mid);
 
     m_labyrinth.generateRun(nextSeed, cfg::kDefaultRunRoomCount);
     m_player.reset(m_labyrinth.currentRoom().playerDefaultSpawn);
@@ -323,7 +330,13 @@ bool Game::loadCheckpoint() {
 void Game::registerNoiseAction(NoiseAction action, float dt, sf::Vector2f stimulusOrigin) {
     const bool isFootstep =
         (action == NoiseAction::StepSneak || action == NoiseAction::StepWalk || action == NoiseAction::StepSprint);
-    const float mult = m_player.noiseGainMultiplier(isFootstep);
+    float mult = m_player.noiseGainMultiplier(isFootstep);
+
+    // Block 2.1: Standing inside a DampMoss shelter dampens footstep noise in half
+    const auto& room = m_labyrinth.currentRoom();
+    if (isFootstep && AcousticSystem::isInDampMossShelter(m_player.position(), room.walls, room.floorMaterial)) {
+        mult *= 0.50f;
+    }
 
     m_noiseLevel = applyNoiseAction(m_noiseLevel, action, dt, mult);
     m_roomPeakNoise = std::max(m_roomPeakNoise, m_noiseLevel);
@@ -332,18 +345,76 @@ void Game::registerNoiseAction(NoiseAction action, float dt, sf::Vector2f stimul
         action == NoiseAction::RadialPulse ||
         action == NoiseAction::DecoyImpact ||
         action == NoiseAction::CombatHit ||
-        action == NoiseAction::StepSprint) {
+        action == NoiseAction::StepSprint ||
+        action == NoiseAction::WhistlePing ||
+        action == NoiseAction::StompImpact ||
+        action == NoiseAction::GlassShatter ||
+        action == NoiseAction::WaterSplash ||
+        action == NoiseAction::EchoSwarmAmplify) {
         m_noiseSilenceGraceTimer = 0.35f;
     }
+
+    const bool isGroundVib =
+        (action == NoiseAction::StepSprint ||
+         action == NoiseAction::RadialPulse ||
+         action == NoiseAction::StompImpact ||
+         action == NoiseAction::GlassShatter ||
+         action == NoiseAction::WaterSplash);
 
     const NoiseTier tier = classifyNoiseTier(m_noiseLevel);
     if (tier != NoiseTier::Quiet) {
         for (auto& enemy : m_enemies) {
             if (enemy.isActive()) {
                 const sf::Vector2f target = (tier == NoiseTier::Scream) ? m_player.position() : stimulusOrigin;
-                enemy.applyNoiseTierStimulus(target, tier);
+                enemy.applyNoiseTierStimulus(target, tier, isGroundVib);
             }
         }
+    }
+}
+
+void Game::executePlayerStomp() {
+    if (!m_player.triggerStomp(m_acoustics)) return;
+
+    if (m_audio) m_audio->playWaveSignature(WaveSignature::StompWave);
+    m_cameraShakeTimer = 0.28f;
+    registerNoiseAction(NoiseAction::StompImpact, 1.0f, m_player.position());
+
+    auto& room = m_labyrinth.currentRoomMut();
+    const sf::Vector2f pPos = m_player.position();
+
+    // Block 3.2: Stomp pushes nearby enemies back and staggers them
+    int pushedEnemies = 0;
+    for (auto& enemy : m_enemies) {
+        if (enemy.isActive()) {
+            if (enemy.applyStompKnockback(pPos, cfg::kStompRadius, cfg::kStompKnockback, room.walls)) {
+                ++pushedEnemies;
+            }
+        }
+    }
+
+    // Block 3.2 & 2.3: Stomp shatters any Brittle Glass walls within Stomp radius
+    bool shatteredAnyGlass = false;
+    for (auto& w : room.walls) {
+        if (!w.isOpen && w.material == SurfaceMaterial::Glass) {
+            const sf::Vector2f c = closestPointOnSegGame(pPos, w.a, w.b);
+            if (distSq2D(pPos, c) <= cfg::kStompRadius * cfg::kStompRadius) {
+                w.isOpen = true;
+                shatteredAnyGlass = true;
+                if (w.doorId != -1) {
+                    m_labyrinth.activateSwitch(w.doorId);
+                }
+            }
+        }
+    }
+
+    if (shatteredAnyGlass) {
+        registerNoiseAction(NoiseAction::GlassShatter, 1.0f, pPos);
+        if (m_audio) m_audio->playWaveSignature(WaveSignature::GlassShatterWave);
+        m_statusBannerText = "STOMP SHATTERED BRITTLE GLASS BARRIER (+40 NOISE)!";
+        m_statusBannerTimer = 3.0f;
+    } else if (pushedEnemies > 0) {
+        m_statusBannerText = "SEISMIC STOMP REPELLED " + std::to_string(pushedEnemies) + " HUNTER(S) (+35 NOISE)";
+        m_statusBannerTimer = 2.4f;
     }
 }
 
@@ -361,10 +432,17 @@ void Game::updateNoiseSystem(float dt) {
         registerNoiseAction(stepAct, dt, m_player.position());
     }
 
-    // Silence decay (-10/sec) when player is not sprinting/walking or emitting active sonar bursts
+    // Silence decay (-10/sec, or -20/sec inside a DampMoss shelter per Block 2.1!)
     if ((!m_player.movedLastFrame() || m_player.activeStance() == MovementStance::Sneak) &&
         m_noiseSilenceGraceTimer <= 0.0f) {
-        m_noiseLevel = applyNoiseAction(m_noiseLevel, NoiseAction::SilenceDecay, dt, 1.0f);
+        const auto& curRoom = m_labyrinth.currentRoom();
+        const bool inMossShelter = AcousticSystem::isInDampMossShelter(
+            m_player.position(),
+            curRoom.walls,
+            curRoom.floorMaterial
+        );
+        const float decayMult = inMossShelter ? 2.0f : 1.0f;
+        m_noiseLevel = applyNoiseAction(m_noiseLevel, NoiseAction::SilenceDecay, dt, decayMult);
     }
 
     // Cross-room sound propagation through open doors (50% attenuation per hop, up to 2 rooms)
@@ -385,7 +463,6 @@ void Game::updateNoiseSystem(float dt) {
 
     // Block 1.3: If the player is making loud/scream noise in a cleared room with open doors,
     // an enemy from an adjacent room can hear the leaked noise (> 30) and breach through the doorway
-    // (protected by reopenRoomForNoiseIntrusion so a room can never enter an infinite respawn loop).
     if (room.cleared && !room.noiseIntrusionConsumed &&
         room.type != RoomType::Start && room.type != RoomType::Sanctuary &&
         room.type != RoomType::FinalExit && m_noiseIntrusionCooldown <= 0.0f &&
@@ -393,7 +470,6 @@ void Game::updateNoiseSystem(float dt) {
         for (const auto& leak : leaks) {
             if (leak.gridDistance == 1 && leak.leakedNoise > cfg::noise::kThresholdAudible) {
                 const auto& nbRoom = m_labyrinth.roomAt(static_cast<std::size_t>(leak.roomId));
-                // Pull an intruder from an uncleared adjacent enemy room (or on Scream tier from an adjacent enemy room)
                 if ((!nbRoom.cleared && !nbRoom.enemySpawns.empty()) ||
                     (!nbRoom.enemySpawns.empty() && m_noiseLevel >= cfg::noise::kThresholdScream)) {
                     const CardinalDir doorwayInCurrent = oppositeDir(leak.entryDirInTarget);
@@ -407,7 +483,7 @@ void Game::updateNoiseSystem(float dt) {
                             {entryPos, m_player.position(), {640.0f, 400.0f}},
                             (m_noiseLevel >= cfg::noise::kThresholdScream) ? EnemyVariant::Phantom : EnemyVariant::Stalker
                         );
-                        intruder.applyNoiseTierStimulus(m_player.position(), classifyNoiseTier(m_noiseLevel));
+                        intruder.applyNoiseTierStimulus(m_player.position(), classifyNoiseTier(m_noiseLevel), true);
                         m_enemies.push_back(std::move(intruder));
 
                         if (m_audio) m_audio->playEffect(SoundEffectId::EnemyHuntRoar, 0.95f, 0.92f);
@@ -448,7 +524,7 @@ void Game::updateMenuBackground(float dt) {
         };
         m_acoustics.emitPulse(origin, 360.0f, 580.0f, 0.85f, 84, WaveSignature::RadialPulse, 0.0f, 6.2831853f, false);
     }
-    m_acoustics.update(dt, m_labyrinth.currentRoom().walls);
+    m_acoustics.update(dt, m_labyrinth.currentRoomMut().walls);
     m_acoustics.clearRecentEvents();
 }
 
@@ -469,7 +545,7 @@ void Game::updatePlaying(float dt) {
 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift) || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift)) {
             stance = MovementStance::Sneak;
-        } else if (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl) || sf::Keyboard::isKeyPressed(sf::Keyboard::C)) {
+        } else if (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl) || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl)) {
             stance = MovementStance::Sprint;
         }
     }
@@ -484,7 +560,21 @@ void Game::updatePlaying(float dt) {
         if (emittedSig == WaveSignature::FootstepSneak ||
             emittedSig == WaveSignature::FootstepWalk ||
             emittedSig == WaveSignature::FootstepSprint) {
-            const SurfaceMaterial floorMat = m_player.detectFloorMaterial(room.walls, room.floorMaterial);
+            SurfaceMaterial floorMat = m_player.detectFloorMaterial(room.walls, room.floorMaterial);
+
+            // Check if player stepped into a WaterPuddle prop
+            bool steppedInPuddle = (floorMat == SurfaceMaterial::Water);
+            if (!steppedInPuddle) {
+                for (const auto& prop : room.props) {
+                    if (prop.type == PropType::WaterPuddle &&
+                        distSq2D(m_player.position(), prop.position) <= (prop.scale * 1.25f) * (prop.scale * 1.25f)) {
+                        steppedInPuddle = true;
+                        floorMat = SurfaceMaterial::Water;
+                        break;
+                    }
+                }
+            }
+
             if (m_audio) {
                 m_audio->playMaterialFootstep(
                     floorMat,
@@ -493,10 +583,26 @@ void Game::updatePlaying(float dt) {
                     m_player.position()
                 );
             }
+
+            // Block 2.4: Steps on Water add +15 noise and emit 2x-distance concentric water ripples!
+            if (steppedInPuddle && emittedSig != WaveSignature::FootstepSneak && !m_player.hasRelic(RelicId::MossTreadBoots)) {
+                m_acoustics.emitWaterRipples(m_player.position(), 240.0f);
+                registerNoiseAction(NoiseAction::WaterSplash, 1.0f, m_player.position());
+            }
         } else {
             if (m_audio) m_audio->playWaveSignature(emittedSig);
             if (emittedSig == WaveSignature::DecoyImpact) {
                 registerNoiseAction(NoiseAction::DecoyImpact, 1.0f, m_mouseWorldPos);
+            } else if (emittedSig == WaveSignature::EchoTrapPulse) {
+                // Block 3.3: Echo Trap Mine lures enemies to the trap position while the player is away!
+                const sf::Vector2f trapPos = m_player.activeEchoTrap().position;
+                for (auto& enemy : m_enemies) {
+                    if (enemy.isActive()) {
+                        enemy.applyNoiseTierStimulus(trapPos, NoiseTier::Loud, true);
+                    }
+                }
+                m_statusBannerText = "ECHO BEACON MINE DETONATED — HUNTERS LURED TO TRAP!";
+                m_statusBannerTimer = 2.4f;
             }
         }
 
@@ -567,6 +673,19 @@ void Game::updatePlaying(float dt) {
         &room.resonators,
         m_player.resonatorChargeMultiplier()
     );
+
+    // Block 2.3: Check if any Brittle Glass walls were shattered by high-power sonar rays (+40 noise)
+    sf::Vector2f glassPos = m_player.position();
+    const int shatteredCount = m_acoustics.consumeShatteredGlassCount(&glassPos);
+    if (shatteredCount > 0) {
+        registerNoiseAction(NoiseAction::GlassShatter, 1.0f, glassPos);
+        m_acoustics.emitPulse(glassPos, 430.0f, 480.0f, 1.20f, 72, WaveSignature::GlassShatterWave, 0.0f, 6.2831853f, true);
+        if (m_audio) m_audio->playWaveSignature(WaveSignature::GlassShatterWave);
+        m_cameraShakeTimer = 0.25f;
+        m_statusBannerText = "BRITTLE GLASS SHATTERED BY RESONANCE (+40 NOISE)!";
+        m_statusBannerTimer = 3.0f;
+    }
+
     for (int unlockedId : newlyUnlockedBySonar) {
         m_labyrinth.activateSwitch(unlockedId);
         if (m_audio) {
@@ -578,7 +697,7 @@ void Game::updatePlaying(float dt) {
             m_acoustics.emitPulse(m_player.position(), 420.0f, 520.0f, 1.2f, 96, WaveSignature::ResonatorHum, 0.0f, 6.2831853f, false);
             m_statusBannerText = "SECRET ACOUSTIC FRACTURE UNSEALED BY SONAR!";
             m_statusBannerTimer = 3.8f;
-        } else {
+        } else if (unlockedId < 700) {
             if (room.type == RoomType::Puzzle && room.shardReward > 0) {
                 m_player.addEchoShards(room.shardReward);
                 room.shardReward = 0;
@@ -609,16 +728,28 @@ void Game::updatePlaying(float dt) {
         anyActiveBefore = true;
 
         bool reflectedHit = false;
-        const float impactEnergy = m_acoustics.consumeRayImpactAt(enemy.position(), enemy.hitRadius(), reflectedHit);
+        bool highFreqHit = false;
+        const float impactEnergy = m_acoustics.consumeRayImpactAt(
+            enemy.position(),
+            enemy.hitRadius(),
+            reflectedHit,
+            &highFreqHit
+        );
         if (impactEnergy > 0.0f) {
-            const float dmg = impactEnergy * 11.5f * m_player.sonarDamageMultiplier(reflectedHit);
+            const float dmg = impactEnergy * 11.5f * m_player.sonarDamageMultiplier(reflectedHit, highFreqHit);
             if (m_player.hasRelic(RelicId::EchoSiphonCoil)) {
                 m_player.restoreStamina(5.5f);
             }
             // Block 1.1: Combat hit adds +10 noise
             registerNoiseAction(NoiseAction::CombatHit, 1.0f, enemy.position());
 
-            const bool defeated = enemy.applyAcousticDamage(dmg, reflectedHit, m_player.position(), room.walls);
+            const bool defeated = enemy.applyAcousticDamage(
+                dmg,
+                reflectedHit,
+                m_player.position(),
+                room.walls,
+                highFreqHit
+            );
             if (defeated) {
                 ++m_enemiesDisruptedThisRun;
                 if (enemy.variant() == EnemyVariant::AbyssalBoss) {
@@ -644,6 +775,18 @@ void Game::updatePlaying(float dt) {
         } else if (prevState != EnemyState::SearchLastKnown && enemy.state() == EnemyState::SearchLastKnown) {
             const float occ = AcousticSystem::computeTransmissionFactor(enemy.position(), m_player.position(), room.walls);
             if (m_audio) m_audio->playSpatial(SoundEffectId::EnemySearchClick, enemy.position(), occ, 0.85f, 1.0f);
+        }
+
+        // Block 4.4: Check if EchoSwarm repeated & amplified a player sound nearby
+        if (enemy.consumeSwarmAmplification()) {
+            registerNoiseAction(NoiseAction::EchoSwarmAmplify, 1.0f, enemy.position());
+            for (auto& other : m_enemies) {
+                if (other.isActive() && &other != &enemy) {
+                    other.applyNoiseTierStimulus(m_player.position(), NoiseTier::Loud, true);
+                }
+            }
+            m_statusBannerText = "ECHO SWARM AMPLIFIED YOUR SOUND (+12 NOISE) — HUNTERS ALERTED!";
+            m_statusBannerTimer = 2.6f;
         }
 
         const bool meleeHit = enemy.hasCaughtPlayer();

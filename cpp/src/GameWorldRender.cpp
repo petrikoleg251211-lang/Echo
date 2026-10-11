@@ -62,7 +62,7 @@ void Game::renderWorld() {
     if (m_state == AppState::Playing || m_state == AppState::Paused || m_state == AppState::GameOver) {
         for (const auto& enemy : m_enemies) {
             if (!enemy.isActive()) continue;
-            const float enemyVis = m_acoustics.queryIlluminationAt(enemy.position(), m_player.position());
+            const float enemyVis = m_acoustics.queryIlluminationAt(enemy.position(), m_player.position(), &room.resonators);
             enemy.render(win, enemyVis, m_player.position(), &m_assets);
         }
         m_player.render(win, &m_assets);
@@ -81,7 +81,7 @@ void Game::renderSubterraneanProps() {
     for (const auto& prop : room.props) {
         const float vis = std::max(
             m_ambientVisibility * 1.4f + visorBoost,
-            m_acoustics.queryIlluminationAt(prop.position, pPos)
+            m_acoustics.queryIlluminationAt(prop.position, pPos, &room.resonators)
         );
         if (vis <= 0.02f) continue;
         const auto alpha = static_cast<sf::Uint8>(std::clamp(vis * 185.0f, 12.0f, 195.0f));
@@ -140,7 +140,7 @@ void Game::renderInteractiveObjects() {
             continue;
         }
 
-        const float vis = std::max(0.28f + visorBoost, m_acoustics.queryIlluminationAt(portal.position, pPos));
+        const float vis = std::max(0.28f + visorBoost, m_acoustics.queryIlluminationAt(portal.position, pPos, &room.resonators));
         const auto alpha = static_cast<sf::Uint8>(vis * 230.0f);
 
         sf::Color col = unlocked ? sf::Color(52, 211, 153, alpha) : sf::Color(167, 139, 250, alpha);
@@ -178,7 +178,7 @@ void Game::renderInteractiveObjects() {
     for (const auto& ped : room.relicPedestals) {
         if (ped.collected) continue;
         const RelicSpec spec = getRelicSpec(ped.relicId);
-        const float vis = std::max(0.45f, m_acoustics.queryIlluminationAt(ped.position, pPos));
+        const float vis = std::max(0.45f, m_acoustics.queryIlluminationAt(ped.position, pPos, &room.resonators));
         const auto alpha = static_cast<sf::Uint8>(vis * 245.0f);
 
         const float bob = std::sin(m_runTimeSec * 3.2f) * 3.0f;
@@ -216,7 +216,7 @@ void Game::renderInteractiveObjects() {
     // 3. Render Quartermaster Shop Offers
     for (const auto& offer : room.shopOffers) {
         if (offer.purchased) continue;
-        const float vis = std::max(0.55f, m_acoustics.queryIlluminationAt(offer.position, pPos));
+        const float vis = std::max(0.55f, m_acoustics.queryIlluminationAt(offer.position, pPos, &room.resonators));
         const auto alpha = static_cast<sf::Uint8>(vis * 240.0f);
         const sf::Color col(250, 204, 21, alpha);
 
@@ -238,7 +238,7 @@ void Game::renderInteractiveObjects() {
 
     // 4. Render Interactive Mechanisms
     for (const auto& mech : room.mechanisms) {
-        const float vis = std::max(0.28f + visorBoost, m_acoustics.queryIlluminationAt(mech.position, pPos));
+        const float vis = std::max(0.28f + visorBoost, m_acoustics.queryIlluminationAt(mech.position, pPos, &room.resonators));
         if (vis <= 0.05f) continue;
 
         const auto alpha = static_cast<sf::Uint8>(vis * 240.0f);
@@ -272,13 +272,24 @@ void Game::renderInteractiveObjects() {
         }
     }
 
-    // 5. Render Acoustic Resonator Crystals
+    // 5. Render Acoustic Resonator Crystals & Block 2.5 Humming Columns
     for (const auto& res : room.resonators) {
-        const float vis = std::max(0.30f, std::max(res.energy, m_acoustics.queryIlluminationAt(res.position, pPos)));
+        const float vis = std::max(0.30f, std::max(res.energy, m_acoustics.queryIlluminationAt(res.position, pPos, &room.resonators)));
         const auto alpha = static_cast<sf::Uint8>(vis * 245.0f);
         const sf::Color col = res.activated
             ? sf::Color(52, 211, 153, alpha)
-            : sf::Color(167, 139, 250, alpha);
+            : (res.humTimer > 0.0f ? sf::Color(232, 121, 249, alpha) : sf::Color(167, 139, 250, alpha));
+
+        if (res.humTimer > 0.0f) {
+            const float humFade = std::min(1.0f, res.humTimer / cfg::kResonatorHumDurationSec);
+            sf::CircleShape humField(cfg::kResonatorHumRadius);
+            humField.setOrigin(cfg::kResonatorHumRadius, cfg::kResonatorHumRadius);
+            humField.setPosition(res.position);
+            humField.setFillColor(sf::Color(192, 132, 252, static_cast<sf::Uint8>(humFade * 24.0f)));
+            humField.setOutlineThickness(1.2f);
+            humField.setOutlineColor(sf::Color(232, 121, 249, static_cast<sf::Uint8>(humFade * 115.0f)));
+            win.draw(humField);
+        }
 
         sf::CircleShape ring(res.radius + 4.0f + std::sin(m_runTimeSec * 5.0f) * 2.0f);
         ring.setOrigin(ring.getRadius(), ring.getRadius());
@@ -292,7 +303,7 @@ void Game::renderInteractiveObjects() {
             win,
             ModelId::ResonatorCrystal,
             res.position,
-            m_runTimeSec * (res.activated ? 2.6f : 1.1f),
+            m_runTimeSec * (res.activated || res.humTimer > 0.0f ? 2.6f : 1.1f),
             15.0f,
             sf::Color(28, 20, 52, alpha),
             col,
@@ -303,9 +314,12 @@ void Game::renderInteractiveObjects() {
 
         if (vis > 0.35f) {
             const int pct = static_cast<int>(std::round(res.energy * 100.0f));
-            const std::string status = res.activated
+            std::string status = res.activated
                 ? "RESONATOR LOCKED (100%)"
                 : ("PING CRYSTAL (" + std::to_string(pct) + "%)");
+            if (res.humTimer > 0.0f && res.targetDoorId == -1) {
+                status = "HUMMING LURE ACTIVE (" + std::to_string(static_cast<int>(std::ceil(res.humTimer))) + "S)";
+            }
             m_ui.drawText(win, status, {res.position.x, res.position.y - 28.0f}, 10.5f, col, TextAlign::Center);
         }
     }

@@ -190,11 +190,12 @@ void AssetManager::buildFallbackMesh(ModelId id, Mesh3D& outMesh) {
 
 void AssetManager::buildProceduralTextures(bool uploadGpuTextures) {
     constexpr unsigned int kTexSize = 64;
+    constexpr int kMatCount = static_cast<int>(SurfaceMaterial::Count);
     if (uploadGpuTextures) {
-        m_materialTextures.resize(6);
+        m_materialTextures.resize(static_cast<std::size_t>(kMatCount));
     }
 
-    for (int matIdx = 0; matIdx < 6; ++matIdx) {
+    for (int matIdx = 0; matIdx < kMatCount; ++matIdx) {
         const auto mat = static_cast<SurfaceMaterial>(matIdx);
         const MaterialProperties props = getMaterialProperties(mat);
         sf::Image& img = m_materialImages[static_cast<std::size_t>(matIdx)];
@@ -202,7 +203,7 @@ void AssetManager::buildProceduralTextures(bool uploadGpuTextures) {
 
         for (unsigned int y = 0; y < kTexSize; ++y) {
             for (unsigned int x = 0; x < kTexSize; ++x) {
-                const std::uint32_t h = texHash(static_cast<int>(x), static_cast<int>(y), static_cast<std::uint32_t>(matIdx * 997));
+                const std::uint32_t h = texHash(x, y, static_cast<std::uint32_t>(matIdx * 997));
                 const int grain = static_cast<int>(h & 0x1Fu) - 16;
 
                 int r = props.fillTint.r + grain;
@@ -248,6 +249,10 @@ void AssetManager::buildProceduralTextures(bool uploadGpuTextures) {
                 } else if (mat == SurfaceMaterial::ResonanceDoor) {
                     if (((x + y) % 16) < 3 || ((64 - x + y) % 16) < 3) {
                         r += 35; g += 22; b += 52;
+                    }
+                } else if (mat == SurfaceMaterial::Glass) {
+                    if (((x + y * 2) % 21) < 2 || ((64 - x + y) % 29) == 0) {
+                        r += 55; g += 60; b += 65;
                     }
                 }
 

@@ -115,28 +115,28 @@ void Game::renderHud() {
         sf::Color(51, 65, 85, 220)
     );
 
-    // Echo Shards, Decoys, Relics counters
+    // Echo Shards, Decoys, Echo Traps, Frequency & Relics counters
     m_ui.drawText(
         win,
-        "ECHO SHARDS: " + std::to_string(m_player.echoShards()),
-        {220.0f, 714.0f},
-        11.5f,
+        "SHARDS: " + std::to_string(m_player.echoShards()) + "   |   RELICS [TAB]: " + std::to_string(m_player.relics().size()) + "/" + std::to_string(static_cast<int>(RelicId::Count)),
+        {212.0f, 714.0f},
+        10.5f,
         sf::Color(250, 204, 21),
         TextAlign::Left,
         true
     );
     m_ui.drawText(
         win,
-        "DECOY STONES [RMB]: " + std::to_string(m_player.decoyCount()),
-        {220.0f, 736.0f},
-        11.0f,
+        "DECOYS [RMB]: " + std::to_string(m_player.decoyCount()) + "   |   ECHO TRAPS [R]: " + std::to_string(m_player.echoTrapCount()),
+        {212.0f, 736.0f},
+        10.5f,
         sf::Color(167, 139, 250)
     );
     m_ui.drawText(
         win,
-        "RELICS [TAB]: " + std::to_string(m_player.relics().size()) + "/" + std::to_string(static_cast<int>(RelicId::Count)),
-        {220.0f, 758.0f},
-        11.0f,
+        std::string("FREQ: ") + frequencyName(m_player.activeFrequency()) + "   |   [Q] WHISTLE  [C] STOMP",
+        {212.0f, 758.0f},
+        10.0f,
         sf::Color(52, 211, 153)
     );
 
@@ -531,18 +531,19 @@ void Game::renderControlsOverlay() {
     m_ui.drawText(win, "SURVEYOR FIELD MANUAL — RESONANCE & NOISE DISCIPLINE", {640.0f, 112.0f}, 18.5f, sf::Color(56, 189, 248), TextAlign::Center, true);
 
     const char* lines[] = {
-        "NOISE METER (0-100) & SILENCE DISCIPLINE:",
+        "NOISE METER (0-100) & MATERIAL ACOUSTICS (BLOCKS 1 & 2):",
         "  [0-30 QUIET]     PATROL ONLY; CLEAR CHAMBER <= 30 FOR GHOST CLEAR (x1.5 SHARDS & SILENT STEP)",
-        "  [30-60 AUDIBLE]  LEAKS 50% THROUGH OPEN DOORS; NEIGHBORING HUNTERS INVESTIGATE",
-        "  [60-85 LOUD]     HUNTERS CONVERGE ON SOURCE; CAN BREACH CLEARED ROOMS VIA OPEN DOORS",
-        "  [85+ SCREAM]     PRIORITY HUNT LOCK WITHIN 2 GRID ROOMS; SILENCE DECAYS AT -10/SEC",
+        "  [DAMP MOSS]      ABSORBS 80% ECHO; STANDING IN MOSS HALVES STEP NOISE & DOUBLES SILENCE DECAY",
+        "  [METAL / GLASS]  METAL GRANTS +2 BOUNCES; GLASS SHATTERS ON HIGH PULSE/STOMP (+40 NOISE)",
+        "  [WATER / PIPES]  WATER DOUBLES SOUND RANGE (+15 SPLASH NOISE); PIPE COLUMNS HUM 4S LURE",
         "",
-        "OFFENSIVE & TACTICAL ECHOLOCATION:",
-        "  [LEFT CLICK / E] DIRECTIONAL SONAR PING (+12 NOISE, DAMAGES HUNTERS, +10 HIT NOISE)",
-        "  [SPACEBAR]       360-DEGREE RADIAL PULSE (+30 NOISE, REVEALS ROOM & SECRET WALLS)",
-        "  [RIGHT CLICK / G] THROW DECOY STONE (+15 NOISE AT IMPACT, LURES HUNTERS AWAY)",
-        "  [F]              CLAIM RELIC / BUY AT QUARTERMASTER / ACTIVATE SHRINE OR LEVER",
-        "  [TAB / M]        TOGGLE 2D PROCEDURAL MAP & EQUIPPED RELIC LOADOUT"
+        "EXTENDED ACOUSTIC ARSENAL & TUNING (BLOCKS 3 & 4):",
+        "  [Q] WHISTLE      15-DEG NARROW BEAM (+5 NOISE, LONG RANGE, UNMASKS MIMICS SAFELY)",
+        "  [LMB / E] PING   DIRECTIONAL SONAR PING (+12 NOISE, DAMAGES HUNTERS, +10 HIT NOISE)",
+        "  [SPACE] PULSE    360-DEG RADIAL PULSE (+30 NOISE, REVEALS ROOM & SHATTERS GLASS)",
+        "  [C / V] STOMP    SEISMIC SHOCKWAVE (+35 NOISE, KNOCKS BACK HUNTERS & SHATTERS GLASS)",
+        "  [R / X] TRAP     3.0S DELAYED ECHO BEACON MINE (EMITS 3 SONAR LURES FROM FLOOR)",
+        "  [1 / 2 / 3]      TUNE SONAR FREQUENCY: LOW [1] PENETRATES, MID [2], HIGH [3] ANTI-SWARM/MIMIC"
     };
 
     float y = 160.0f;

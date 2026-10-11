@@ -76,7 +76,7 @@ private:
     void buildProceduralTextures(bool uploadGpuTextures);
 
     std::array<Mesh3D, static_cast<std::size_t>(ModelId::Count)> m_meshes;
-    std::array<sf::Image, 6> m_materialImages;
+    std::array<sf::Image, static_cast<std::size_t>(SurfaceMaterial::Count)> m_materialImages;
     std::vector<sf::Texture> m_materialTextures;
     std::size_t m_loadedDiskModelCount{0};
     bool m_initialized{false};

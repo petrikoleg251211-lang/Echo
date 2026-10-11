@@ -520,6 +520,8 @@ void AudioManager::playMaterialFootstep(SurfaceMaterial mat, bool isSneak, bool 
         case SurfaceMaterial::Water:         id = SoundEffectId::FootstepWater; break;
         case SurfaceMaterial::DampMoss:      id = SoundEffectId::FootstepMoss; break;
         case SurfaceMaterial::ResonanceDoor: id = SoundEffectId::FootstepMetal; break;
+        case SurfaceMaterial::Glass:         id = SoundEffectId::FootstepMetal; break;
+        case SurfaceMaterial::Count:         id = SoundEffectId::FootstepStone; break;
     }
     playSpatial(id, pos, 1.0f, 0.78f, nextPitchVariation(0.06f));
 }
@@ -560,6 +562,21 @@ void AudioManager::playWaveSignature(WaveSignature sig) {
         case WaveSignature::ResonatorHum:
             playEffect(SoundEffectId::ResonatorHum, 0.95f, 1.0f);
             playEffect(SoundEffectId::GateSlideOpen, 0.80f, 1.05f);
+            break;
+        case WaveSignature::WhistleBeam:
+            playEffect(SoundEffectId::SonarPing, 0.60f, 1.55f);
+            break;
+        case WaveSignature::StompWave:
+            playEffect(SoundEffectId::RadialPulse, 1.0f, 0.68f);
+            playEffect(SoundEffectId::EnemyTremor, 0.90f, 0.82f);
+            break;
+        case WaveSignature::EchoTrapPulse:
+            playEffect(SoundEffectId::ResonatorHum, 0.90f, 1.32f);
+            playEffect(SoundEffectId::SonarPing, 0.80f, 1.25f);
+            break;
+        case WaveSignature::GlassShatterWave:
+            playEffect(SoundEffectId::ShaleCrack, 1.0f, 1.48f);
+            playEffect(SoundEffectId::DistantMetalClang, 0.85f, 1.65f);
             break;
     }
 }

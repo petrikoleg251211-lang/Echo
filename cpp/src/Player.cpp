@@ -52,6 +52,8 @@ void Player::reset(sf::Vector2f spawnPos) noexcept {
     m_stamina = 100.0f;
     m_echoShards = 0;
     m_decoyCount = 4;
+    m_echoTrapCount = cfg::kDefaultEchoTrapCount;
+    m_activeFrequency = AcousticFrequency::Mid;
     m_relics.clear();
     m_stepAccumulator = 0.0f;
     m_walkCyclePhase = 0.0f;
@@ -60,14 +62,19 @@ void Player::reset(sf::Vector2f spawnPos) noexcept {
     m_cooldownPing = 0.0f;
     m_cooldownPulse = 0.0f;
     m_cooldownDecoy = 0.0f;
+    m_cooldownWhistle = 0.0f;
+    m_cooldownStomp = 0.0f;
+    m_cooldownTrap = 0.0f;
     m_movedLastFrame = false;
     m_decoyProj.active = false;
+    m_echoTrap.active = false;
 }
 
 void Player::setPosition(sf::Vector2f pos) noexcept {
     m_position = pos;
     m_movedLastFrame = false;
     m_decoyProj.active = false;
+    m_echoTrap.active = false;
 }
 
 void Player::heal(int amount) noexcept {
@@ -99,24 +106,28 @@ bool Player::addRelic(RelicId id, AcousticSystem* acoustics) {
         m_health = std::min(m_maxHealth, m_health + 2);
     } else if (id == RelicId::PhantomDecoyRig) {
         m_decoyCount += 3;
+        m_echoTrapCount += 2;
     } else if (id == RelicId::PrismaticMirror && acoustics != nullptr) {
-        const auto nextRefl = static_cast<std::uint8_t>(std::min<int>(6, acoustics->maxReflections() + 2));
+        const auto nextRefl = static_cast<std::uint8_t>(std::min<int>(8, acoustics->maxReflections() + 2));
         acoustics->setMaxReflections(nextRefl);
     }
     return true;
 }
 
-float Player::sonarDamageMultiplier(bool isReflectedHit) const noexcept {
+float Player::sonarDamageMultiplier(bool isReflectedHit, bool isHighFreqHit) const noexcept {
     float mult = 1.0f;
-    if (hasRelic(RelicId::FocusedTransducer)) {
+    if (hasRelic(RelicId::HarmonicAmplifier)) {
         mult *= 1.40f;
     }
     if (isReflectedHit) {
         mult *= hasRelic(RelicId::PrismaticMirror) ? 1.55f : 1.20f;
         // Synergy: FocusedTransducer + PrismaticMirror = Phase-Locked Resonance Beam
-        if (hasRelic(RelicId::FocusedTransducer) && hasRelic(RelicId::PrismaticMirror)) {
+        if (hasRelic(RelicId::HarmonicAmplifier) && hasRelic(RelicId::PrismaticMirror)) {
             mult *= 1.25f;
         }
+    }
+    if (isHighFreqHit) {
+        mult *= 1.12f;
     }
     return mult;
 }
@@ -134,6 +145,18 @@ float Player::noiseGainMultiplier(bool isFootstep) const noexcept {
         mult *= 0.55f;
     }
     return mult;
+}
+
+void Player::setFrequency(AcousticFrequency freq, AcousticSystem& acoustics) noexcept {
+    m_activeFrequency = freq;
+    acoustics.setActiveFrequency(freq);
+}
+
+void Player::cycleFrequency(int delta, AcousticSystem& acoustics) noexcept {
+    int idx = static_cast<int>(m_activeFrequency) + delta;
+    while (idx < 0) idx += 3;
+    idx %= 3;
+    setFrequency(static_cast<AcousticFrequency>(idx), acoustics);
 }
 
 bool Player::applyDamage(int amount, AcousticSystem& acoustics) {
@@ -168,17 +191,53 @@ bool Player::update(
     WaveSignature& outEmittedSignature
 ) {
     bool emittedSound = false;
+    acoustics.setActiveFrequency(m_activeFrequency);
 
     m_invulnTimer = std::max(0.0f, m_invulnTimer - dt);
     m_cooldownPing = std::max(0.0f, m_cooldownPing - dt);
     m_cooldownPulse = std::max(0.0f, m_cooldownPulse - dt);
     m_cooldownDecoy = std::max(0.0f, m_cooldownDecoy - dt);
+    m_cooldownWhistle = std::max(0.0f, m_cooldownWhistle - dt);
+    m_cooldownStomp = std::max(0.0f, m_cooldownStomp - dt);
+    m_cooldownTrap = std::max(0.0f, m_cooldownTrap - dt);
     m_pingRecoilTimer = std::max(0.0f, m_pingRecoilTimer - dt);
     m_breathPhase += dt * (m_stamina < 40.0f ? 6.5f : 2.8f);
 
     const sf::Vector2f aimDelta = aimWorldPos - m_position;
     if (aimDelta.x * aimDelta.x + aimDelta.y * aimDelta.y > 9.0f) {
         m_facingAngle = std::atan2(aimDelta.y, aimDelta.x);
+    }
+
+    // Block 3.3: Update Delayed Echo Trap Mine (3.0s countdown -> series of 3 sonar bursts)
+    if (m_echoTrap.active) {
+        if (m_echoTrap.delayTimer > 0.0f) {
+            m_echoTrap.delayTimer = std::max(0.0f, m_echoTrap.delayTimer - dt);
+            if (m_echoTrap.delayTimer <= 0.0f) {
+                m_echoTrap.pulseIntervalTimer = 0.0f;
+            }
+        } else {
+            m_echoTrap.pulseIntervalTimer -= dt;
+            if (m_echoTrap.pulseIntervalTimer <= 0.0f && m_echoTrap.pulsesRemaining > 0) {
+                --m_echoTrap.pulsesRemaining;
+                m_echoTrap.pulseIntervalTimer = 0.45f;
+                acoustics.emitPulse(
+                    m_echoTrap.position,
+                    445.0f,
+                    640.0f,
+                    1.35f,
+                    128,
+                    WaveSignature::EchoTrapPulse,
+                    0.0f,
+                    6.2831853f,
+                    true
+                );
+                outEmittedSignature = WaveSignature::EchoTrapPulse;
+                emittedSound = true;
+                if (m_echoTrap.pulsesRemaining <= 0) {
+                    m_echoTrap.active = false;
+                }
+            }
+        }
     }
 
     if (m_decoyProj.active) {
@@ -364,11 +423,12 @@ bool Player::triggerDirectionalPing(sf::Vector2f aimTarget, AcousticSystem& acou
         m_facingAngle = std::atan2(d.y, d.x);
     }
 
-    const bool hasFocused = hasRelic(RelicId::FocusedTransducer);
+    const bool hasFocused = hasRelic(RelicId::HarmonicAmplifier);
     const float range = hasFocused ? 755.0f : 560.0f;
     const float intensity = hasFocused ? 1.24f : 0.96f;
     const float spread = hasFocused ? 0.80f : 1.0471975f;
 
+    acoustics.setActiveFrequency(m_activeFrequency);
     acoustics.emitPulse(
         m_position,
         465.0f,
@@ -389,7 +449,8 @@ bool Player::triggerRadialPulse(AcousticSystem& acoustics) {
     m_cooldownPulse = cfg::kCooldownRadialPulse * cdScale;
     m_pingRecoilTimer = 0.35f;
 
-    const bool hasFocused = hasRelic(RelicId::FocusedTransducer);
+    const bool hasFocused = hasRelic(RelicId::HarmonicAmplifier);
+    acoustics.setActiveFrequency(m_activeFrequency);
     acoustics.emitPulse(
         m_position,
         430.0f,
@@ -401,6 +462,72 @@ bool Player::triggerRadialPulse(AcousticSystem& acoustics) {
         6.2831853f,
         true
     );
+    return true;
+}
+
+// Block 3.1: Narrow 15-degree Whistle beam (long range, only +5 noise)
+bool Player::triggerWhistle(sf::Vector2f aimTarget, AcousticSystem& acoustics) {
+    if (m_cooldownWhistle > 0.0f) return false;
+    const float cdScale = hasRelic(RelicId::ResonanceCapacitor) ? 0.75f : 1.0f;
+    m_cooldownWhistle = cfg::kCooldownWhistle * cdScale;
+    m_pingRecoilTimer = 0.18f;
+
+    const sf::Vector2f d = aimTarget - m_position;
+    if (d.x * d.x + d.y * d.y > 4.0f) {
+        m_facingAngle = std::atan2(d.y, d.x);
+    }
+
+    const bool hasFocused = hasRelic(RelicId::HarmonicAmplifier);
+    const float range = hasFocused ? (cfg::kWhistleRange * 1.25f) : cfg::kWhistleRange;
+    const float intensity = hasFocused ? 1.15f : 0.92f;
+
+    acoustics.setActiveFrequency(m_activeFrequency);
+    acoustics.emitPulse(
+        m_position,
+        520.0f,
+        range,
+        intensity,
+        44,
+        WaveSignature::WhistleBeam,
+        m_facingAngle,
+        cfg::kWhistleSpreadRad,
+        true
+    );
+    return true;
+}
+
+// Block 3.2: Wide Stomp shockwave (pushes nearby enemies, shatters Glass/Shale, +35 noise)
+bool Player::triggerStomp(AcousticSystem& acoustics) {
+    if (m_cooldownStomp > 0.0f) return false;
+    const float cdScale = hasRelic(RelicId::ResonanceCapacitor) ? 0.75f : 1.0f;
+    m_cooldownStomp = cfg::kCooldownStomp * cdScale;
+    m_pingRecoilTimer = 0.32f;
+
+    acoustics.setActiveFrequency(m_activeFrequency);
+    acoustics.emitPulse(
+        m_position,
+        470.0f,
+        cfg::kStompRadius * 1.55f,
+        1.45f,
+        136,
+        WaveSignature::StompWave,
+        0.0f,
+        6.2831853f,
+        true
+    );
+    return true;
+}
+
+// Block 3.3: Place Delayed Echo Trap / Beacon Mine (triggers after 3.0s delay)
+bool Player::placeEchoTrap() noexcept {
+    if (m_echoTrapCount <= 0 || m_cooldownTrap > 0.0f || m_echoTrap.active) return false;
+    --m_echoTrapCount;
+    m_cooldownTrap = cfg::kCooldownEchoTrap;
+    m_echoTrap.position = m_position;
+    m_echoTrap.delayTimer = cfg::kEchoTrapDelaySec;
+    m_echoTrap.pulseIntervalTimer = 0.0f;
+    m_echoTrap.pulsesRemaining = 3;
+    m_echoTrap.active = true;
     return true;
 }
 
@@ -442,6 +569,24 @@ bool Player::throwDecoy(sf::Vector2f targetPoint, const std::vector<WallSegment>
 }
 
 void Player::render(sf::RenderTarget& target, const AssetManager* assets) const {
+    // Render active Echo Trap Mine on the floor
+    if (m_echoTrap.active) {
+        const float pulse = 0.5f + 0.5f * std::sin(m_echoTrap.delayTimer * 14.0f);
+        sf::CircleShape trapRing(12.0f + pulse * 5.0f);
+        trapRing.setOrigin(trapRing.getRadius(), trapRing.getRadius());
+        trapRing.setPosition(m_echoTrap.position);
+        trapRing.setFillColor(sf::Color(232, 121, 249, 45));
+        trapRing.setOutlineThickness(1.6f);
+        trapRing.setOutlineColor(sf::Color(232, 121, 249, 210));
+        target.draw(trapRing);
+
+        sf::CircleShape trapCore(5.0f);
+        trapCore.setOrigin(5.0f, 5.0f);
+        trapCore.setPosition(m_echoTrap.position);
+        trapCore.setFillColor(m_echoTrap.delayTimer > 0.0f ? sf::Color(250, 204, 21) : sf::Color(232, 121, 249));
+        target.draw(trapCore);
+    }
+
     if (m_decoyProj.active) {
         const float arcLift = std::sin(m_decoyProj.progress * 3.1415926f) * 16.0f;
         const sf::Vector2f elevatedPos{m_decoyProj.currentPos.x, m_decoyProj.currentPos.y - arcLift};
@@ -469,7 +614,7 @@ void Player::render(sf::RenderTarget& target, const AssetManager* assets) const 
         return;
     }
 
-    const float coneHalf = hasRelic(RelicId::FocusedTransducer) ? 0.40f : 0.523598f;
+    const float coneHalf = hasRelic(RelicId::HarmonicAmplifier) ? 0.40f : 0.523598f;
     const sf::Vector2f leftRay{
         std::cos(m_facingAngle - coneHalf) * 42.0f,
         std::sin(m_facingAngle - coneHalf) * 42.0f

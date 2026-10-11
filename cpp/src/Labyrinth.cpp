@@ -578,23 +578,48 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
 
                 const int layout = static_cast<int>((i + rng.nextU32()) % 3);
                 if (layout == 0) {
-                    addRectObstacle(room.walls, 340.0f, 210.0f, 110.0f, 110.0f, secondaryMat);
+                    addRectObstacle(room.walls, 340.0f, 210.0f, 110.0f, 110.0f, SurfaceMaterial::DampMoss);
                     addRectObstacle(room.walls, 830.0f, 210.0f, 110.0f, 110.0f, primaryMat);
                     addRectObstacle(room.walls, 340.0f, 480.0f, 110.0f, 110.0f, primaryMat);
-                    addRectObstacle(room.walls, 830.0f, 480.0f, 110.0f, 110.0f, secondaryMat);
+                    addRectObstacle(room.walls, 830.0f, 480.0f, 110.0f, 110.0f, SurfaceMaterial::DampMoss);
+                    // Block 2.3: Breakable Brittle Glass partition in center-north lane
+                    room.walls.push_back({{580.0f, 265.0f}, {700.0f, 265.0f}, SurfaceMaterial::Glass, 700 + static_cast<int>(i), false});
                 } else if (layout == 1) {
                     addRectObstacle(room.walls, 460.0f, 230.0f, 90.0f, 110.0f, SurfaceMaterial::Metal);
-                    addRectObstacle(room.walls, 730.0f, 460.0f, 90.0f, 110.0f, SurfaceMaterial::Metal);
+                    addRectObstacle(room.walls, 730.0f, 460.0f, 90.0f, 110.0f, SurfaceMaterial::DampMoss);
                     room.hazards.push_back({{420.0f, 520.0f}, 42.0f, "BRITTLE SHALE"});
                     room.ambientEmitters.push_back({{820.0f, 250.0f}, 3.6f, 0.5f, true});
+                    // Block 2.5: Resonance Pipe Column that hums for 4s when struck by sonar
+                    room.resonators.push_back({
+                        750 + static_cast<int>(i),
+                        {640.0f, 400.0f},
+                        16.0f,
+                        0.0f,
+                        false,
+                        -1,
+                        "RESONANCE PIPE COLUMN (4S HUM LURE)",
+                        0.0f,
+                        0.0f
+                    });
                 } else {
                     addRectObstacle(room.walls, 310.0f, 240.0f, 95.0f, 320.0f, secondaryMat);
-                    addRectObstacle(room.walls, 875.0f, 240.0f, 95.0f, 320.0f, secondaryMat);
+                    addRectObstacle(room.walls, 875.0f, 240.0f, 95.0f, 320.0f, SurfaceMaterial::DampMoss);
+                    room.walls.push_back({{580.0f, 535.0f}, {700.0f, 535.0f}, SurfaceMaterial::Glass, 700 + static_cast<int>(i), false});
                 }
 
-                const EnemyVariant v1 = (gn.distFromStart >= 4 && (i % 3 == 0))
-                    ? EnemyVariant::Phantom
-                    : ((i % 2 == 0) ? EnemyVariant::Stalker : EnemyVariant::Shrieker);
+                // Block 4: Deterministic selection across both classic and new acoustic enemy variants
+                const EnemyVariant combatPool[7] = {
+                    EnemyVariant::Stalker,
+                    EnemyVariant::Shrieker,
+                    EnemyVariant::SilentStalker,
+                    EnemyVariant::DeafBrute,
+                    EnemyVariant::Mimic,
+                    EnemyVariant::EchoSwarm,
+                    EnemyVariant::Phantom
+                };
+                const EnemyVariant v1 = (gn.distFromStart <= 2)
+                    ? combatPool[(i + m_runSeed) % 3]
+                    : combatPool[(i + gn.distFromStart + m_runSeed) % 7];
                 room.enemyVariant = v1;
                 room.enemyPatrolNodes = {
                     {480.0f, 200.0f},
@@ -605,7 +630,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 room.enemySpawns.push_back({v1, room.enemyPatrolNodes, 0});
 
                 if (gn.distFromStart >= 3) {
-                    const EnemyVariant v2 = (i % 2 == 0) ? EnemyVariant::Shrieker : EnemyVariant::Stalker;
+                    const EnemyVariant v2 = combatPool[(i * 3 + m_runSeed + 2) % 7];
                     const int waveIdx = (gn.distFromStart >= 5 && (i % 2 == 1)) ? 1 : 0;
                     room.totalWaves = (waveIdx == 1) ? 2 : 1;
                     room.enemySpawns.push_back({
@@ -651,15 +676,18 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
             case RoomType::Puzzle: {
                 room.cleared = true;
                 room.shardReward = 20;
-                room.objectiveText = "BOUNCE SONAR RAYS OFF THE 45-DEGREE STEEL MIRRORS TO ENERGIZE THE RESONATOR CRYSTAL.";
+                room.objectiveText = "BOUNCE SONAR RAYS OFF THE 45-DEGREE STEEL MIRRORS (+2 BOUNCES) TO ENERGIZE THE CRYSTAL.";
                 const int switchId = 100 + static_cast<int>(i);
 
                 addRectObstacle(room.walls, 460.0f, 250.0f, 80.0f, 120.0f, SurfaceMaterial::Stone);
                 addRectObstacle(room.walls, 460.0f, 430.0f, 80.0f, 120.0f, SurfaceMaterial::Stone);
+                // Block 2.2: Polished Metal mirrors with lossless reflection & +2 bounces
                 room.walls.push_back({{340.0f, 190.0f}, {430.0f, 280.0f}, SurfaceMaterial::Metal, -1, false});
                 room.walls.push_back({{340.0f, 610.0f}, {430.0f, 520.0f}, SurfaceMaterial::Metal, -1, false});
                 room.walls.push_back({{850.0f, 280.0f}, {940.0f, 190.0f}, SurfaceMaterial::Metal, -1, false});
                 room.walls.push_back({{850.0f, 520.0f}, {940.0f, 610.0f}, SurfaceMaterial::Metal, -1, false});
+                // Block 2.3: Brittle Glass baffle that can be shattered by RadialPulse/Stomp (+40 noise) or bypassed via Metal mirrors
+                room.walls.push_back({{565.0f, 365.0f}, {565.0f, 435.0f}, SurfaceMaterial::Glass, 700 + static_cast<int>(i), false});
 
                 room.resonators.push_back({
                     switchId,
@@ -668,7 +696,9 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                     0.0f,
                     false,
                     switchId,
-                    "HARMONIC RESONATOR CRYSTAL"
+                    "HARMONIC RESONATOR CRYSTAL",
+                    0.0f,
+                    0.0f
                 });
                 room.mechanisms.push_back({
                     switchId,
@@ -717,7 +747,7 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 room.shopOffers.push_back({
                     601 + static_cast<int>(i) * 2,
                     {820.0f, 380.0f},
-                    "ACOUSTIC DECOY PACK (+3 DECOYS)",
+                    "ACOUSTIC DECOY & TRAP PACK (+3 DECOYS, +2 TRAPS)",
                     12,
                     0,
                     3,
@@ -730,25 +760,27 @@ void Labyrinth::generateRun(std::uint32_t seed, std::size_t targetRoomCount) {
                 room.cleared = false;
                 room.totalWaves = 2;
                 room.shardReward = 28;
-                room.objectiveText = "ELITE GARRISON: DEFEAT THE ARMORED WARDEN & REINFORCEMENT WAVE TO CLAIM THE RELIC.";
+                room.objectiveText = "ELITE GARRISON: DEFEAT THE ARMORED WARDEN / DEAF BRUTE & REINFORCEMENTS TO CLAIM RELIC.";
 
                 addRectObstacle(room.walls, 360.0f, 230.0f, 105.0f, 120.0f, SurfaceMaterial::Metal);
-                addRectObstacle(room.walls, 815.0f, 230.0f, 105.0f, 120.0f, SurfaceMaterial::Metal);
-                addRectObstacle(room.walls, 360.0f, 450.0f, 105.0f, 120.0f, SurfaceMaterial::Metal);
+                addRectObstacle(room.walls, 815.0f, 230.0f, 105.0f, 120.0f, SurfaceMaterial::DampMoss);
+                addRectObstacle(room.walls, 360.0f, 450.0f, 105.0f, 120.0f, SurfaceMaterial::DampMoss);
                 addRectObstacle(room.walls, 815.0f, 450.0f, 105.0f, 120.0f, SurfaceMaterial::Metal);
                 room.hazards.push_back({{640.0f, 240.0f}, 44.0f, "BRITTLE SHALE"});
                 room.hazards.push_back({{640.0f, 560.0f}, 44.0f, "BRITTLE SHALE"});
 
-                room.enemyVariant = EnemyVariant::Warden;
+                const EnemyVariant elitePrimary = (i % 2 == 0) ? EnemyVariant::DeafBrute : EnemyVariant::Warden;
+                const EnemyVariant eliteSecondary = (i % 2 == 0) ? EnemyVariant::SilentStalker : EnemyVariant::EchoSwarm;
+                room.enemyVariant = elitePrimary;
                 room.enemyPatrolNodes = {
                     {520.0f, 200.0f},
                     {760.0f, 200.0f},
                     {760.0f, 600.0f},
                     {520.0f, 600.0f}
                 };
-                room.enemySpawns.push_back({EnemyVariant::Warden, room.enemyPatrolNodes, 0});
+                room.enemySpawns.push_back({elitePrimary, room.enemyPatrolNodes, 0});
                 room.enemySpawns.push_back({
-                    EnemyVariant::Shrieker,
+                    eliteSecondary,
                     {{300.0f, 200.0f}, {980.0f, 200.0f}, {980.0f, 600.0f}, {300.0f, 600.0f}},
                     1
                 });

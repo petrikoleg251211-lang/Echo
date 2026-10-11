@@ -186,6 +186,37 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
                 if (m_audio) m_audio->playWaveSignature(WaveSignature::DirectionalPing);
                 registerNoiseAction(NoiseAction::DirectionalPing, 1.0f, m_player.position());
             }
+        } else if (key == sf::Keyboard::Q) {
+            // Block 3.1: Narrow 15-deg Whistle beam (long range, only +5 noise)
+            if (m_player.triggerWhistle(m_mouseWorldPos, m_acoustics)) {
+                if (m_audio) m_audio->playWaveSignature(WaveSignature::WhistleBeam);
+                registerNoiseAction(NoiseAction::WhistlePing, 1.0f, m_player.position());
+            }
+        } else if (key == sf::Keyboard::C || key == sf::Keyboard::V) {
+            // Block 3.2: Wide Stomp shockwave (+35 noise, pushes enemies, shatters Glass/Shale)
+            executePlayerStomp();
+        } else if (key == sf::Keyboard::R || key == sf::Keyboard::X) {
+            // Block 3.3: Delayed Echo Trap / Beacon Mine (3.0s countdown)
+            if (m_player.placeEchoTrap()) {
+                if (m_audio) m_audio->playEffect(SoundEffectId::SwitchClunk, 0.75f, 1.35f);
+                m_statusBannerText = "ECHO BEACON MINE ARMED (3.0S DELAY -> 3 SONAR LURE BURSTS)";
+                m_statusBannerTimer = 2.6f;
+            }
+        } else if (key == sf::Keyboard::Num1) {
+            m_player.setFrequency(AcousticFrequency::Low, m_acoustics);
+            if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.7f, 0.80f);
+            m_statusBannerText = "SONAR TUNED: LOW FREQUENCY [1] (WALL PENETRATION & LONG PERSISTENCE)";
+            m_statusBannerTimer = 2.2f;
+        } else if (key == sf::Keyboard::Num2) {
+            m_player.setFrequency(AcousticFrequency::Mid, m_acoustics);
+            if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.7f, 1.0f);
+            m_statusBannerText = "SONAR TUNED: MID FREQUENCY [2] (BALANCED SPECTRUM)";
+            m_statusBannerTimer = 2.2f;
+        } else if (key == sf::Keyboard::Num3) {
+            m_player.setFrequency(AcousticFrequency::High, m_acoustics);
+            if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.7f, 1.30f);
+            m_statusBannerText = "SONAR TUNED: HIGH FREQUENCY [3] (+1 METAL BOUNCE, UNMASKS MIMICS & SWARMS)";
+            m_statusBannerTimer = 2.2f;
         } else if (key == sf::Keyboard::G) {
             m_player.throwDecoy(m_mouseWorldPos, m_labyrinth.currentRoom().walls);
         } else if (key == sf::Keyboard::F) {
@@ -313,7 +344,10 @@ void Game::tryInteract() {
             }
             offer.purchased = true;
             if (offer.healAmount > 0) m_player.heal(offer.healAmount);
-            if (offer.decoyAmount > 0) m_player.addDecoy(offer.decoyAmount);
+            if (offer.decoyAmount > 0) {
+                m_player.addDecoy(offer.decoyAmount);
+                m_player.addEchoTrap(2);
+            }
             if (m_audio) m_audio->playEffect(SoundEffectId::LorePickup, 0.95f, 1.1f);
             m_statusBannerText = "PURCHASED: " + offer.label;
             m_statusBannerTimer = 3.0f;

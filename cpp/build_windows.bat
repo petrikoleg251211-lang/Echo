@@ -1,48 +1,57 @@
 @echo off
-setlocal
-cd /d "%~dp0"
+setlocal enabledelayedexpansion
 
 echo ============================================================================
-echo EchoLabyrinth_SFML - Native Windows C++17 / SFML Build Script
+echo   ECHO LABYRINTH v5.0.1 "RESONANCE" - Native C++17 / SFML 2.6.1 Build
 echo ============================================================================
+echo.
 
 where cmake >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] CMake was not found in PATH.
-    echo Please install CMake 3.20+ or run from "Developer Command Prompt for VS 2022".
-    pause
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] CMake was not found in your PATH.
+    echo Please install CMake 3.16+ from https://cmake.org/download/ or via Visual Studio Installer.
     exit /b 1
 )
 
-echo [1/3] Configuring CMake project in .\build ...
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-if %errorlevel% neq 0 (
-    echo [ERROR] CMake configuration failed.
-    pause
-    exit /b %errorlevel%
+echo [1/3] Configuring CMake project (downloading SFML 2.6.1 if first run)...
+cmake -S "%~dp0." -B "%~dp0build" -DCMAKE_BUILD_TYPE=Release
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] CMake configuration failed. Ensure a C++17 compiler ^(Visual Studio 2022 or MinGW-w64^) is installed.
+    exit /b 1
 )
 
-echo [2/3] Compiling Release executable ...
-cmake --build build --config Release
-if %errorlevel% neq 0 (
+echo.
+echo [2/3] Compiling EchoLabyrinth_SFML (Release)...
+cmake --build "%~dp0build" --config Release --parallel 4
+if %ERRORLEVEL% neq 0 (
     echo [ERROR] Compilation failed.
-    pause
-    exit /b %errorlevel%
+    exit /b 1
 )
 
-echo [3/3] Running automated C++ self-test suite ...
-if exist "build\Release\EchoLabyrinth_SFML.exe" (
-    "build\Release\EchoLabyrinth_SFML.exe" --self-test
-    echo.
-    echo Launching EchoLabyrinth_SFML.exe ...
-    start "" "build\Release\EchoLabyrinth_SFML.exe"
-) else if exist "build\EchoLabyrinth_SFML.exe" (
-    "build\EchoLabyrinth_SFML.exe" --self-test
-    echo.
-    echo Launching EchoLabyrinth_SFML.exe ...
-    start "" "build\EchoLabyrinth_SFML.exe"
-) else (
-    echo [WARNING] Executable was built, check the build folder.
+set "EXE_PATH=%~dp0build\bin\Release\EchoLabyrinth_SFML.exe"
+if not exist "!EXE_PATH!" (
+    set "EXE_PATH=%~dp0build\bin\EchoLabyrinth_SFML.exe"
 )
 
-pause
+echo.
+echo [3/3] Running deterministic 18-suite engine self-test...
+"!EXE_PATH!" --self-test
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Self-test verification failed!
+    exit /b 1
+)
+
+echo.
+echo ============================================================================
+echo   BUILD SUCCESSFUL!
+echo   Executable: !EXE_PATH!
+echo ============================================================================
+echo.
+
+if /i "%~1"=="--no-run" (
+    exit /b 0
+)
+
+echo Launching EchoLabyrinth...
+"!EXE_PATH!"
+endlocal

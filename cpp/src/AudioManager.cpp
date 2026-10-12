@@ -1,6 +1,7 @@
 #include "AudioManager.hpp"
 #include <SFML/Audio/Listener.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -10,6 +11,7 @@ namespace echo {
 namespace {
 constexpr unsigned int kSampleRate = 44100;
 constexpr float kTwoPi = 6.28318530717958647692f;
+constexpr float kPi = 3.14159265358979323846f;
 
 float hashNoise(std::uint32_t seed) noexcept {
     seed = (seed ^ 61u) ^ (seed >> 16u);
@@ -49,9 +51,10 @@ float AudioManager::nextPitchVariation(float spread) noexcept {
     return 1.0f + norm * spread;
 }
 
-void AudioManager::initialize() {
+void AudioManager::initialize(const std::string& assetRootDir) {
     if (m_initialized) return;
     buildProceduralBuffers();
+    buildProceduralSoundtracks(assetRootDir);
 
     sf::Listener::setGlobalVolume(100.0f);
     sf::Listener::setUpVector(0.0f, 1.0f, 0.0f);
@@ -72,6 +75,10 @@ void AudioManager::initialize() {
     m_loopSanctum.setBuffer(m_bufSanctumTheme);
     m_loopSanctum.setLoop(true);
     m_loopSanctum.setRelativeToListener(true);
+
+    m_loopBossChoir.setBuffer(m_bufBossChoir);
+    m_loopBossChoir.setLoop(true);
+    m_loopBossChoir.setRelativeToListener(true);
 
     m_initialized = true;
     syncLoopLayerVolumes();
@@ -191,7 +198,7 @@ void AudioManager::buildProceduralBuffers() {
     m_buffers[static_cast<std::size_t>(SoundEffectId::PlayerBreath)] = makeBuffer(
         0.55f,
         [](float t, std::uint32_t idx) {
-            const float env = std::sin(std::min(1.0f, t / 0.55f) * 3.1415926f);
+            const float env = std::sin(std::min(1.0f, t / 0.55f) * kPi);
             const float air = hashNoise(idx + 8192u) * 0.25f;
             const float resonator = std::sin(kTwoPi * 195.0f * t) * 0.12f;
             return (air + resonator) * env * 0.42f;
@@ -226,7 +233,7 @@ void AudioManager::buildProceduralBuffers() {
     m_buffers[static_cast<std::size_t>(SoundEffectId::GateSlideOpen)] = makeBuffer(
         0.92f,
         [](float t, std::uint32_t idx) {
-            const float env = std::sin(std::min(1.0f, t / 0.92f) * 3.1415926f);
+            const float env = std::sin(std::min(1.0f, t / 0.92f) * kPi);
             const float rumble = std::sin(kTwoPi * (68.0f + t * 22.0f) * t);
             const float hiss = hashNoise(idx + 9000u) * std::exp(-t * 4.0f) * 0.35f;
             const float lock = (t > 0.75f) ? std::sin(kTwoPi * 240.0f * (t - 0.75f)) * std::exp(-(t - 0.75f) * 18.0f) : 0.0f;
@@ -340,7 +347,7 @@ void AudioManager::buildProceduralBuffers() {
     m_buffers[static_cast<std::size_t>(SoundEffectId::StructuralCreak)] = makeBuffer(
         0.85f,
         [](float t, std::uint32_t) {
-            const float env = std::sin(std::min(1.0f, t / 0.85f) * 3.1415926f);
+            const float env = std::sin(std::min(1.0f, t / 0.85f) * kPi);
             const float f = 95.0f + std::sin(t * 14.0f) * 18.0f;
             return (std::sin(kTwoPi * f * t) + 0.4f * std::sin(kTwoPi * (f * 2.05f) * t)) * env * 0.32f;
         }
@@ -360,7 +367,7 @@ void AudioManager::buildProceduralBuffers() {
     m_buffers[static_cast<std::size_t>(SoundEffectId::SteamHiss)] = makeBuffer(
         0.52f,
         [](float t, std::uint32_t idx) {
-            const float env = std::sin(std::min(1.0f, t / 0.52f) * 3.1415926f) * std::exp(-t * 3.5f);
+            const float env = std::sin(std::min(1.0f, t / 0.52f) * kPi) * std::exp(-t * 3.5f);
             return hashNoise(idx + 12345u) * env * 0.36f;
         }
     );
@@ -405,54 +412,6 @@ void AudioManager::buildProceduralBuffers() {
             return (c1 + c2 + c3 + 0.6f * c4) * 0.25f * env;
         }
     );
-
-    // Adaptive Music Layer 1: Exploration Sub-Bass Cavern Drone (4.0s seamless loop)
-    m_bufExploreDrone = makeBuffer(
-        4.0f,
-        [](float t, std::uint32_t) {
-            const float lfo = 0.75f + 0.25f * std::sin(kTwoPi * 0.25f * t);
-            const float d1 = std::sin(kTwoPi * 55.0f * t);
-            const float d2 = 0.5f * std::sin(kTwoPi * 82.5f * t);
-            const float airy = 0.2f * std::sin(kTwoPi * 110.0f * t + std::sin(kTwoPi * 0.5f * t));
-            return (d1 + d2 + airy) * 0.22f * lfo;
-        }
-    );
-
-    // Adaptive Music Layer 2: Suspicion Tension Harmonic Pad (4.0s seamless loop)
-    m_bufTensionLayer = makeBuffer(
-        4.0f,
-        [](float t, std::uint32_t) {
-            const float pulse = 0.6f + 0.4f * std::sin(kTwoPi * 0.5f * t);
-            const float minor2nd = std::sin(kTwoPi * 116.5f * t) + 0.7f * std::sin(kTwoPi * 123.5f * t);
-            const float high = 0.25f * std::sin(kTwoPi * 233.0f * t);
-            return (minor2nd * 0.45f + high) * 0.25f * pulse;
-        }
-    );
-
-    // Adaptive Music Layer 3: Pursuit Industrial Percussion Loop (2.0s seamless loop, 120 BPM)
-    m_bufPursuitPulse = makeBuffer(
-        2.0f,
-        [](float t, std::uint32_t idx) {
-            const float beatTime = std::fmod(t, 0.5f);
-            const float kickEnv = std::exp(-beatTime * 16.0f);
-            const float kick = std::sin(kTwoPi * (110.0f - beatTime * 140.0f) * beatTime) * kickEnv;
-            const float subTime = std::fmod(t, 0.25f);
-            const float metallic = hashNoise(idx) * std::exp(-subTime * 28.0f) * 0.22f;
-            return (kick * 0.65f + metallic) * 0.38f;
-        }
-    );
-
-    // Adaptive Music Layer 4: Sanctum / Checkpoint Ethereal Motif (4.0s seamless loop)
-    m_bufSanctumTheme = makeBuffer(
-        4.0f,
-        [](float t, std::uint32_t) {
-            const float swell = 0.65f + 0.35f * std::sin(kTwoPi * 0.25f * t);
-            const float f1 = std::sin(kTwoPi * 220.0f * t);
-            const float f2 = std::sin(kTwoPi * 330.0f * t) * 0.55f;
-            const float f3 = std::sin(kTwoPi * 440.0f * t) * 0.30f;
-            return (f1 + f2 + f3) * 0.16f * swell;
-        }
-    );
 }
 
 void AudioManager::playEffect(SoundEffectId id, float volumeScale, float pitch) {
@@ -493,7 +452,6 @@ void AudioManager::playSpatial(
     voice.setPosition(sourcePos.x, 0.0f, sourcePos.y);
     voice.setMinDistance(140.0f);
     voice.setAttenuation(1.8f);
-    // Slightly lower pitch when heavily occluded by walls (low-pass perceptual cue)
     const float occludedPitch = basePitch * (0.88f + 0.12f * occ) * nextPitchVariation(0.04f);
     voice.setPitch(std::clamp(occludedPitch, 0.5f, 2.0f));
 
@@ -513,17 +471,19 @@ void AudioManager::playMaterialFootstep(SurfaceMaterial mat, bool isSneak, bool 
     }
 
     SoundEffectId id = SoundEffectId::FootstepStone;
+    float matPitch = 1.0f;
     switch (mat) {
-        case SurfaceMaterial::Stone:         id = SoundEffectId::FootstepStone; break;
-        case SurfaceMaterial::Concrete:      id = SoundEffectId::FootstepConcrete; break;
-        case SurfaceMaterial::Metal:         id = SoundEffectId::FootstepMetal; break;
-        case SurfaceMaterial::Water:         id = SoundEffectId::FootstepWater; break;
-        case SurfaceMaterial::DampMoss:      id = SoundEffectId::FootstepMoss; break;
-        case SurfaceMaterial::ResonanceDoor: id = SoundEffectId::FootstepMetal; break;
-        case SurfaceMaterial::Glass:         id = SoundEffectId::FootstepMetal; break;
-        case SurfaceMaterial::Count:         id = SoundEffectId::FootstepStone; break;
+        case SurfaceMaterial::Stone:         id = SoundEffectId::FootstepStone;    matPitch = 1.00f; break;
+        case SurfaceMaterial::Concrete:      id = SoundEffectId::FootstepConcrete; matPitch = 0.94f; break;
+        case SurfaceMaterial::Metal:         id = SoundEffectId::FootstepMetal;    matPitch = 1.08f; break;
+        case SurfaceMaterial::Water:         id = SoundEffectId::FootstepWater;    matPitch = 1.02f; break;
+        case SurfaceMaterial::DampMoss:      id = SoundEffectId::FootstepMoss;     matPitch = 0.88f; break;
+        case SurfaceMaterial::ResonanceDoor: id = SoundEffectId::FootstepMetal;    matPitch = 0.84f; break;
+        case SurfaceMaterial::Glass:         id = SoundEffectId::FootstepMetal;    matPitch = 1.38f; break;
+        case SurfaceMaterial::EchoCrystal:   id = SoundEffectId::ResonatorHum;     matPitch = 1.46f; break;
+        case SurfaceMaterial::Count:         id = SoundEffectId::FootstepStone;    matPitch = 1.00f; break;
     }
-    playSpatial(id, pos, 1.0f, 0.78f, nextPitchVariation(0.06f));
+    playSpatial(id, pos, 1.0f, 0.78f, matPitch * nextPitchVariation(0.05f));
 }
 
 void AudioManager::playWaveSignature(WaveSignature sig) {
@@ -588,6 +548,7 @@ void AudioManager::syncLoopLayerVolumes() noexcept {
         m_loopTension.setVolume(0.0f);
         m_loopPursuit.setVolume(0.0f);
         m_loopSanctum.setVolume(0.0f);
+        m_loopBossChoir.setVolume(0.0f);
         return;
     }
 
@@ -595,10 +556,17 @@ void AudioManager::syncLoopLayerVolumes() noexcept {
     const float music = m_musicVolume / 100.0f;
     const float amb = m_ambientVolume / 100.0f;
 
-    m_loopExplore.setVolume(std::clamp(master * amb * 34.0f, 0.0f, 100.0f));
-    m_loopTension.setVolume(std::clamp(master * music * m_tensionBlend * 52.0f, 0.0f, 100.0f));
-    m_loopPursuit.setVolume(std::clamp(master * music * m_pursuitBlend * 68.0f, 0.0f, 100.0f));
-    m_loopSanctum.setVolume(std::clamp(master * music * m_sanctumBlend * 42.0f, 0.0f, 100.0f));
+    const float exploreDuck = 1.0f - 0.55f * std::max(m_bossBlend, m_pursuitBlend);
+    m_loopExplore.setVolume(std::clamp(master * amb * 42.0f * exploreDuck, 0.0f, 100.0f));
+    m_loopTension.setVolume(std::clamp(master * music * m_tensionBlend * 56.0f, 0.0f, 100.0f));
+    m_loopPursuit.setVolume(std::clamp(master * music * m_pursuitBlend * 72.0f, 0.0f, 100.0f));
+    m_loopSanctum.setVolume(std::clamp(master * music * m_sanctumBlend * 50.0f, 0.0f, 100.0f));
+    m_loopBossChoir.setVolume(std::clamp(master * music * m_bossBlend * 78.0f, 0.0f, 100.0f));
+
+    float bossPitch = 1.0f;
+    if (m_currentBossPhase == 2) bossPitch = 1.059463f;
+    else if (m_currentBossPhase >= 3) bossPitch = 1.122462f;
+    m_loopBossChoir.setPitch(bossPitch);
 }
 
 void AudioManager::setMasterVolume(float volume0to100) noexcept {
@@ -631,6 +599,7 @@ void AudioManager::startAmbientDrone() {
     if (m_loopTension.getStatus() != sf::Sound::Playing) m_loopTension.play();
     if (m_loopPursuit.getStatus() != sf::Sound::Playing) m_loopPursuit.play();
     if (m_loopSanctum.getStatus() != sf::Sound::Playing) m_loopSanctum.play();
+    if (m_loopBossChoir.getStatus() != sf::Sound::Playing) m_loopBossChoir.play();
     syncLoopLayerVolumes();
 }
 
@@ -640,6 +609,7 @@ void AudioManager::stopAmbientDrone() {
     m_loopTension.stop();
     m_loopPursuit.stop();
     m_loopSanctum.stop();
+    m_loopBossChoir.stop();
 }
 
 void AudioManager::updateAdaptiveAudio(
@@ -647,20 +617,27 @@ void AudioManager::updateAdaptiveAudio(
     float dangerLevel0to1,
     bool isPursuing,
     bool isSanctumCheckpoint,
-    float playerStamina0to100
+    float playerStamina0to100,
+    bool isBossChamber,
+    int bossPhase
 ) {
-    // 1. Smoothly crossfade 4 adaptive soundtrack layers
-    const float targetTension = std::clamp((dangerLevel0to1 - 0.12f) / 0.75f, 0.0f, 1.0f);
-    const float targetPursuit = isPursuing ? 1.0f : 0.0f;
-    const float targetSanctum = (isSanctumCheckpoint && !isPursuing && dangerLevel0to1 < 0.25f) ? 1.0f : 0.0f;
+    m_currentBossPhase = std::clamp(bossPhase, 1, 3);
+
+    const float targetBoss = isBossChamber ? 1.0f : 0.0f;
+    const float targetTension = std::clamp((dangerLevel0to1 - 0.12f) / 0.75f, 0.0f, 1.0f)
+                              * (isBossChamber ? 0.45f : 1.0f);
+    const float targetPursuit = isPursuing ? (isBossChamber ? 0.55f : 1.0f) : 0.0f;
+    const float targetSanctum = (!isBossChamber && isSanctumCheckpoint && !isPursuing && dangerLevel0to1 < 0.25f)
+                              ? 1.0f
+                              : 0.0f;
 
     const float blendRate = std::min(1.0f, dt * 2.2f);
     m_tensionBlend += (targetTension - m_tensionBlend) * blendRate;
     m_pursuitBlend += (targetPursuit - m_pursuitBlend) * blendRate;
     m_sanctumBlend += (targetSanctum - m_sanctumBlend) * blendRate;
+    m_bossBlend    += (targetBoss - m_bossBlend) * blendRate;
     syncLoopLayerVolumes();
 
-    // 2. Dynamic heartbeat pulse when danger is elevated
     if (dangerLevel0to1 > 0.15f) {
         m_heartbeatTimer += dt;
         const float interval = std::clamp(1.05f - dangerLevel0to1 * 0.62f, 0.36f, 1.05f);
@@ -672,7 +649,6 @@ void AudioManager::updateAdaptiveAudio(
         m_heartbeatTimer = 0.0f;
     }
 
-    // 3. Player respirator breathing when stamina is low (< 38%)
     if (playerStamina0to100 < 38.0f) {
         m_breathTimer += dt;
         if (m_breathTimer >= 1.45f) {
@@ -684,14 +660,13 @@ void AudioManager::updateAdaptiveAudio(
         m_breathTimer = 0.0f;
     }
 
-    // 4. Random subterranean structural creaks & distant metal clangs
     m_randomAmbienceTimer += dt;
     if (m_randomAmbienceTimer >= 7.5f) {
         m_randomAmbienceTimer = 0.0f;
         const float r = nextPitchVariation(1.0f);
         const sf::Vector2f offset{
-            std::cos(r * 3.14f) * 320.0f,
-            std::sin(r * 3.14f) * 240.0f
+            std::cos(r * kPi) * 320.0f,
+            std::sin(r * kPi) * 240.0f
         };
         const SoundEffectId ambId = (r > 1.0f)
             ? SoundEffectId::DistantMetalClang

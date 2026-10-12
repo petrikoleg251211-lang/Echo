@@ -6,6 +6,7 @@
 #include <SFML/System/Vector2.hpp>
 #include <array>
 #include <cstdint>
+#include <string>
 
 namespace echo {
 
@@ -42,12 +43,24 @@ enum class SoundEffectId : std::uint8_t {
     Count = 29
 };
 
+enum class SoundtrackLayerId : std::uint8_t {
+    SubterraneanSurvey = 0, // Exploration dark ambient & cavern bells (D Dorian, 16s)
+    FracturedEchoes = 1,    // Suspicion & tension tritone strings + chitin clicks (16s)
+    BlindPursuit = 2,       // Active hunt 120 BPM industrial darksynth & sub-kick (8s)
+    ResonanceSanctum = 3,   // Checkpoint & harmonic crystal sanctuary pad + harp (16s)
+    ChoirSovereign = 4,     // Boss arena gothic organ, abyssal vowel choir & war drums (16s)
+    Count = 5
+};
+
+using MusicTrackId = SoundtrackLayerId;
+constexpr std::size_t kMusicTrackCount = static_cast<std::size_t>(SoundtrackLayerId::Count);
+
 class AudioManager {
 public:
     AudioManager();
     ~AudioManager();
 
-    void initialize();
+    void initialize(const std::string& assetRootDir = "");
 
     // Updates OpenAL 3D listener position and orientation from player world state
     void updateListener(sf::Vector2f playerPos, float facingAngleRad) noexcept;
@@ -88,27 +101,43 @@ public:
     void startAmbientDrone();
     void stopAmbientDrone();
 
-    // Updates 4-layer adaptive soundtrack (Exploration, Tension, Pursuit, Sanctum) and heartbeat
+    // Updates 5-layer adaptive soundtrack (Exploration, Tension, Pursuit, Sanctum, Boss Choir) and heartbeat
     void updateAdaptiveAudio(
         float dt,
         float dangerLevel0to1,
         bool isPursuing,
         bool isSanctumCheckpoint,
-        float playerStamina0to100
+        float playerStamina0to100,
+        bool isBossChamber = false,
+        int bossPhase = 1
     );
+
+    // Exports all 5 synthesized OST tracks as standard 16-bit 44.1 kHz PCM .wav files
+    bool exportSoundtrackWavFiles(const std::string& outputDir);
+
+    // Accessors for deterministic self-testing & OST metadata
+    const sf::SoundBuffer& soundtrackBuffer(SoundtrackLayerId layer) const noexcept;
+    static const char* trackFilename(SoundtrackLayerId layer) noexcept;
+    static const char* trackTitle(SoundtrackLayerId layer) noexcept;
+    float tensionBlend() const noexcept { return m_tensionBlend; }
+    float pursuitBlend() const noexcept { return m_pursuitBlend; }
+    float sanctumBlend() const noexcept { return m_sanctumBlend; }
+    float bossBlend() const noexcept { return m_bossBlend; }
 
 private:
     void buildProceduralBuffers();
+    void buildProceduralSoundtracks(const std::string& assetRootDir);
     void syncLoopLayerVolumes() noexcept;
     float nextPitchVariation(float spread = 0.05f) noexcept;
 
     std::array<sf::SoundBuffer, static_cast<std::size_t>(SoundEffectId::Count)> m_buffers;
 
-    // 4 adaptive music & ambience loop buffers
+    // 5 adaptive music & ambience loop buffers
     sf::SoundBuffer m_bufExploreDrone;
     sf::SoundBuffer m_bufTensionLayer;
     sf::SoundBuffer m_bufPursuitPulse;
     sf::SoundBuffer m_bufSanctumTheme;
+    sf::SoundBuffer m_bufBossChoir;
 
     // 20-voice polyphonic pool for simultaneous spatial footsteps, echoes, and environment sounds
     std::array<sf::Sound, 20> m_voices;
@@ -118,6 +147,7 @@ private:
     sf::Sound m_loopTension;
     sf::Sound m_loopPursuit;
     sf::Sound m_loopSanctum;
+    sf::Sound m_loopBossChoir;
 
     float m_masterVolume{80.0f};
     float m_musicVolume{75.0f};
@@ -127,6 +157,8 @@ private:
     float m_tensionBlend{0.0f};
     float m_pursuitBlend{0.0f};
     float m_sanctumBlend{0.0f};
+    float m_bossBlend{0.0f};
+    int m_currentBossPhase{1};
 
     float m_heartbeatTimer{0.0f};
     float m_breathTimer{0.0f};

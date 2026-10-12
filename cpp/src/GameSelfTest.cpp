@@ -28,7 +28,7 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [1/17]: 20 distinct seeds verified for 2D grid uniqueness, N/E/S/W door symmetry, & Boss/Exit reachability.\n";
+    std::cout << "[SelfTest] PASS [1/18]: 20 distinct seeds verified for 2D grid uniqueness, N/E/S/W door symmetry, & Boss/Exit reachability.\n";
 
     // 2. Seed Determinism Verification (same seed -> identical graph)
     Labyrinth labA;
@@ -47,7 +47,7 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [2/17]: Deterministic seed reproducibility verified across all 32 chambers.\n";
+    std::cout << "[SelfTest] PASS [2/18]: Deterministic seed reproducibility verified across all 32 chambers.\n";
 
     // 3. Verify 2D BFS Geometric Walkability across every room in the procedural run
     for (int r = 0; r < static_cast<int>(labA.roomCount()); ++r) {
@@ -57,7 +57,7 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [3/17]: All 32 procedural chambers verified via 2D BFS grid pathfinding.\n";
+    std::cout << "[SelfTest] PASS [3/18]: All 32 procedural chambers verified via 2D BFS grid pathfinding.\n";
 
     // 4. Verify Combat Door Lockdown, Room Clear Unsealing, and Secret Wall Sonar Fracture
     int combatRoomId = -1;
@@ -97,7 +97,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Secret room wall was not unsealed by sonar pulse.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [4/17]: Combat door lockdown, room clear unsealing, & Secret Wall sonar fracture verified.\n";
+    std::cout << "[SelfTest] PASS [4/18]: Combat door lockdown, room clear unsealing, & Secret Wall sonar fracture verified.\n";
 
     // 5. Verify AcousticSystem reflections & multi-wall material attenuation
     const std::vector<WallSegment> metalWall = {{{500.0f, 100.0f}, {500.0f, 700.0f}, SurfaceMaterial::Metal, -1, false}};
@@ -113,7 +113,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Material transmission ordering invalid.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [5/17]: AcousticSystem reflections & multi-wall material attenuation verified.\n";
+    std::cout << "[SelfTest] PASS [5/18]: AcousticSystem reflections & multi-wall material attenuation verified.\n";
 
     // 6. Verify AcousticResonator crystal charging in Puzzle room
     int puzzleRoomId = -1;
@@ -147,7 +147,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Puzzle room AcousticResonator did not charge.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [6/17]: Puzzle chamber AcousticResonator crystal energized and unlocked.\n";
+    std::cout << "[SelfTest] PASS [6/18]: Puzzle chamber AcousticResonator crystal energized and unlocked.\n";
 
     // 7. Verify Player Hull Integrity, Echo Shards economy, and Relic synergies
     Player player;
@@ -168,7 +168,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Player invulnerability frames or damage failed.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [7/17]: Player Hull Integrity, Echo Shards economy, & Relic synergies verified.\n";
+    std::cout << "[SelfTest] PASS [7/18]: Player Hull Integrity, Echo Shards economy, & Relic synergies verified.\n";
 
     // 8. Verify EnemyAI 9 archetypes, 3-phase AbyssalBoss, and harmonic sonar disruption damage
     EnemyAI boss;
@@ -199,7 +199,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: AbyssalBoss was not defeated when HP reached 0.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [8/17]: EnemyAI 9 variants, 3-phase AbyssalBoss, & harmonic sonar damage verified.\n";
+    std::cout << "[SelfTest] PASS [8/18]: EnemyAI 9 variants, 3-phase AbyssalBoss, & harmonic sonar damage verified.\n";
 
     // 9. Verify SaveSystem V4 atomic write, FNV-1a checksum, and full roguelike + meta state round-trip
     const std::string testSavePath = SaveSystem::resolveSaveFilePath(exeDir, "test_echolabyrinth_v4.dat");
@@ -247,7 +247,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         return 1;
     }
     std::remove(testSavePath.c_str());
-    std::cout << "[SelfTest] PASS [9/17]: SaveSystem V4 atomic serialization, seed/relic/meta round-trip, & checksum verified.\n";
+    std::cout << "[SelfTest] PASS [9/18]: SaveSystem V4 atomic serialization, seed/relic/meta round-trip, & checksum verified.\n";
 
     // 10. Verify AssetManager 3D Wavefront OBJ models and 7 procedural material textures (including Glass)
     AssetManager assets;
@@ -264,7 +264,7 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [10/17]: AssetManager loaded " << assets.loadedDiskModelCount()
+    std::cout << "[SelfTest] PASS [10/18]: AssetManager loaded " << assets.loadedDiskModelCount()
               << "/7 Wavefront 3D .obj models (" << assets.totalTriangleCount()
               << " triangles) and 7 RGBA material textures.\n";
 
@@ -337,7 +337,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Scream tier should lock enemy into PursuePlayer at 100 suspicion.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [11/17]: Noise Meter action deltas (+2/+8/+25/+12/+30/+15/+10/-10) & exact NoiseTier boundaries verified.\n";
+    std::cout << "[SelfTest] PASS [11/18]: Noise Meter action deltas (+2/+8/+25/+12/+30/+15/+10/-10) & exact NoiseTier boundaries verified.\n";
 
     // 12. BLOCK 1.3 & 1.4: Cross-Room Sound Propagation (50% attenuation per open door), Closed-Door Blocking, & Ghost Clear
     Labyrinth noiseLab;
@@ -378,7 +378,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Non-Ghost Clear (peak 45 > 30) expected 20 shards, got " << loudShards << ".\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [12/17]: Cross-room 50% noise propagation, closed-door blocking, & Ghost Clear (x1.5 Shards) verified.\n";
+    std::cout << "[SelfTest] PASS [12/18]: Cross-room 50% noise propagation, closed-door blocking, & Ghost Clear (x1.5 Shards) verified.\n";
 
     // 13. BLOCK 1 END-TO-END INTEGRATION SUITE:
     //     (a) Ghost Clear after loud noise in previous room (m_roomPeakNoise reset to 0 on room transition),
@@ -523,7 +523,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         return 1;
     }
     std::remove(simGame.m_saveFilePath.c_str());
-    std::cout << "[SelfTest] PASS [13/17]: End-to-end Ghost Clear after room transition, cross-room AI alert, enemy intrusion, & anti-respawn guard verified.\n";
+    std::cout << "[SelfTest] PASS [13/18]: End-to-end Ghost Clear after room transition, cross-room AI alert, enemy intrusion, & anti-respawn guard verified.\n";
 
     // 14. BLOCK 2 VERIFICATION: Materials & Acoustic Physics
     //     - DampMoss: 80% reflection attenuation (reflectivity == 0.20) & 2x shelter noise dampening
@@ -578,7 +578,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Resonator Column 4-second hum timer or illumination failed.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [14/17]: Block 2 material physics (Moss -80% & shelter, Metal +2 bounces, Glass shatter +40, Water 2x/+15, Column 4s hum) verified.\n";
+    std::cout << "[SelfTest] PASS [14/18]: Block 2 material physics (Moss -80% & shelter, Metal +2 bounces, Glass shatter +40, Water 2x/+15, Column 4s hum) verified.\n";
 
     // 15. BLOCK 3 VERIFICATION: Extended Player Sound Arsenal (Whistle, Stomp, Delayed Echo Trap, & Frequency Tuning)
     Player arsenalPlayer;
@@ -632,7 +632,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: Frequency tuning transmission ordering (Low > Mid > High) failed.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [15/17]: Block 3 sound arsenal (Whistle +5, Stomp +35 & knockback, 3s Echo Trap mine, Low/Mid/High frequencies) verified.\n";
+    std::cout << "[SelfTest] PASS [15/18]: Block 3 sound arsenal (Whistle +5, Stomp +35 & knockback, 3s Echo Trap mine, Low/Mid/High frequencies) verified.\n";
 
     // 16. BLOCK 4 VERIFICATION: 4 New Acoustic Enemy Archetypes (SilentStalker, DeafBrute, Mimic, EchoSwarm)
     AcousticSystem block4Acoustics;
@@ -709,7 +709,7 @@ int Game::runSelfTest(const std::string& exeDir) {
         std::cerr << "[SelfTest] FAIL: EchoSwarm did not amplify nearby player sound (+12 noise).\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [16/17]: Block 4 enemies (SilentStalker, DeafBrute, Mimic, & EchoSwarm) verified.\n";
+    std::cout << "[SelfTest] PASS [16/18]: Block 4 enemies (SilentStalker, DeafBrute, Mimic, & EchoSwarm) verified.\n";
 
     // 17. BLOCK 5 & SAVE V5 VERIFICATION:
     //     Dynamic Room Events, 12 Relics, 12 Audio-Lore Codex Logs, Boss Arena Acoustic Phases, & SaveSystem V5 (+ V4 Compat)
@@ -863,9 +863,32 @@ int Game::runSelfTest(const std::string& exeDir) {
         return 1;
     }
     std::remove(v5SavePath.c_str());
-    std::cout << "[SelfTest] PASS [17/17]: Block 5 (RoomEvents, 12 Relics, 12 Codex logs, Boss Arena Phases, & Save V5+V4 compat) verified.\n";
+    for (std::size_t tIdx = 0; tIdx < kMusicTrackCount; ++tIdx) {
+        const auto trackId = static_cast<MusicTrackId>(tIdx);
+        const char* fn = AudioManager::trackFilename(trackId);
+        const char* title = AudioManager::trackTitle(trackId);
+        if (fn == nullptr || fn[0] == '\0' || title == nullptr || title[0] == '\0') {
+            std::cerr << "[SelfTest] FAIL: Invalid OST track metadata at index " << tIdx << ".\n";
+            return 1;
+        }
+    }
+    std::cout << "[SelfTest] PASS [17/19]: Block 5 (RoomEvents, 12 Relics, 12 Codex logs, Boss Arena Phases, 5-Track OST, & Save V5+V4 compat) verified.\n";
 
-    std::cout << "[SelfTest] ALL 17 ECHOLABYRINTH 5.0 (PHASE A + B + C) NATIVE C++17 VERIFICATION SUITES PASSED SUCCESSFULLY.\n";
+    // 18. STAGE 1 GAMEPLAY QUALITY SUITE (Hit-Stop, Telegraphing, 4 Difficulties, 3-Room Tutorial, Save V6, & 1000-Run Balance Report)
+    if (runStage1SelfTest(exeDir) != 0) {
+        std::cerr << "[SelfTest] FAIL: Stage 1 Gameplay Quality suite [18/19] failed.\n";
+        return 1;
+    }
+    std::cout << "[SelfTest] PASS [18/19]: Stage 1 Gameplay Quality (Hit-Stop, Telegraphing, 4 Difficulties, 3-Room Tutorial, Save V6, & --balance-report) verified.\n";
+
+    // 19. STAGE 2 CONTENT & BIOMES SUITE (4 Biomes, EchoCrystal Ray Splitting, Leech, Banshee, TuningForkConstruct, & Room 16 Mini-Boss The Conductor)
+    if (runStage2SelfTest(exeDir) != 0) {
+        std::cerr << "[SelfTest] FAIL: Stage 2 Content & Biomes suite [19/19] failed.\n";
+        return 1;
+    }
+    std::cout << "[SelfTest] PASS [19/19]: Stage 2 Content & Biomes (4 Biomes, EchoCrystal Ray Splitting, Leech, Banshee, TuningForkConstruct, & The Conductor) verified.\n";
+
+    std::cout << "[SelfTest] ALL 19 ECHOLABYRINTH 5.0 (STAGE 0 + STAGE 1 + STAGE 2) NATIVE C++17 VERIFICATION SUITES PASSED SUCCESSFULLY.\n";
     return 0;
 }
 

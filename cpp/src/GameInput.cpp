@@ -28,12 +28,14 @@ void Game::rebuildMenuButtons() {
 
     if (m_state == AppState::MainMenu) {
         const bool hasSave = SaveSystem::hasSaveFile(m_saveFilePath);
-        m_menuButtons.push_back({"START NEW ROGUELIKE RUN", {cx, 310.0f}, {390.0f, 42.0f}, true});
-        m_menuButtons.push_back({"CONTINUE SAVED EXPEDITION", {cx, 362.0f}, {390.0f, 42.0f}, hasSave});
-        m_menuButtons.push_back({"AUDIO-LORE CODEX [J]", {cx, 414.0f}, {390.0f, 42.0f}, true});
-        m_menuButtons.push_back({"AUDIO & ACOUSTIC SETTINGS", {cx, 466.0f}, {390.0f, 42.0f}, true});
-        m_menuButtons.push_back({"SURVEYOR FIELD MANUAL", {cx, 518.0f}, {390.0f, 42.0f}, true});
-        m_menuButtons.push_back({"EXIT TO DESKTOP", {cx, 570.0f}, {390.0f, 42.0f}, true});
+        const std::string diffLabel = std::string("DIFFICULTY: < ") + difficultyModeName(m_difficulty) + " >";
+        m_menuButtons.push_back({"START NEW ROGUELIKE RUN", {cx, 286.0f}, {390.0f, 38.0f}, true});
+        m_menuButtons.push_back({diffLabel, {cx, 332.0f}, {390.0f, 38.0f}, true});
+        m_menuButtons.push_back({"CONTINUE SAVED EXPEDITION", {cx, 378.0f}, {390.0f, 38.0f}, hasSave});
+        m_menuButtons.push_back({"AUDIO-LORE CODEX [J]", {cx, 424.0f}, {390.0f, 38.0f}, true});
+        m_menuButtons.push_back({"AUDIO & ACOUSTIC SETTINGS", {cx, 470.0f}, {390.0f, 38.0f}, true});
+        m_menuButtons.push_back({"SURVEYOR FIELD MANUAL", {cx, 516.0f}, {390.0f, 38.0f}, true});
+        m_menuButtons.push_back({"EXIT TO DESKTOP", {cx, 562.0f}, {390.0f, 38.0f}, true});
     } else if (m_state == AppState::Paused) {
         m_menuButtons.push_back({"RESUME EXPEDITION", {cx, 290.0f}, {380.0f, 40.0f}, true});
         m_menuButtons.push_back({"SAVE CHECKPOINT [F5]", {cx, 340.0f}, {380.0f, 40.0f}, true});
@@ -67,11 +69,16 @@ void Game::executeMenuSelection(std::size_t index) {
 
     if (m_state == AppState::MainMenu) {
         if (index == 0) startNewGame();
-        else if (index == 1) loadCheckpoint();
-        else if (index == 2) { m_previousState = AppState::MainMenu; m_state = AppState::Codex; rebuildMenuButtons(); }
-        else if (index == 3) { m_previousState = AppState::MainMenu; m_state = AppState::Settings; rebuildMenuButtons(); }
-        else if (index == 4) { m_previousState = AppState::MainMenu; m_state = AppState::Controls; rebuildMenuButtons(); }
-        else if (index == 5) { if (m_window) m_window->close(); }
+        else if (index == 1) {
+            cycleDifficulty(1);
+            rebuildMenuButtons();
+            m_selectedMenuIndex = 1;
+        }
+        else if (index == 2) loadCheckpoint();
+        else if (index == 3) { m_previousState = AppState::MainMenu; m_state = AppState::Codex; rebuildMenuButtons(); }
+        else if (index == 4) { m_previousState = AppState::MainMenu; m_state = AppState::Settings; rebuildMenuButtons(); }
+        else if (index == 5) { m_previousState = AppState::MainMenu; m_state = AppState::Controls; rebuildMenuButtons(); }
+        else if (index == 6) { if (m_window) m_window->close(); }
     } else if (m_state == AppState::Paused) {
         if (index == 0) m_state = AppState::Playing;
         else if (index == 1) {
@@ -186,23 +193,41 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
             return;
         }
         if (key == sf::Keyboard::Tab || key == sf::Keyboard::M) {
+            if (!getDifficultyProfile(m_difficulty).allowMinimap) {
+                m_showMinimap = false;
+                m_statusBannerText = "MINIMAP DISABLED IN SILENCE [HARDCORE] MODE!";
+                m_statusBannerTimer = 2.2f;
+                return;
+            }
             m_showMinimap = !m_showMinimap;
             if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.7f, 1.1f);
             return;
         }
         if (key == sf::Keyboard::Space) {
             if (m_player.triggerRadialPulse(m_acoustics)) {
+                m_tutStepPinged = true;
+                updateTutorialProgression();
                 if (m_audio) m_audio->playWaveSignature(WaveSignature::RadialPulse);
                 registerNoiseAction(NoiseAction::RadialPulse, 1.0f, m_player.position());
+                for (auto& enemy : m_enemies) {
+                    if (enemy.detachLeech(m_player.position())) {
+                        m_statusBannerText = "ACOUSTIC LEECH BLASTED OFF BY RADIAL PULSE!";
+                        m_statusBannerTimer = 2.2f;
+                    }
+                }
             }
         } else if (key == sf::Keyboard::E) {
             if (m_player.triggerDirectionalPing(m_mouseWorldPos, m_acoustics)) {
+                m_tutStepPinged = true;
+                updateTutorialProgression();
                 if (m_audio) m_audio->playWaveSignature(WaveSignature::DirectionalPing);
                 registerNoiseAction(NoiseAction::DirectionalPing, 1.0f, m_player.position());
             }
         } else if (key == sf::Keyboard::Q) {
             // Block 3.1: Narrow 15-deg Whistle beam (long range, only +5 noise)
             if (m_player.triggerWhistle(m_mouseWorldPos, m_acoustics)) {
+                m_tutStepPinged = true;
+                updateTutorialProgression();
                 if (m_audio) m_audio->playWaveSignature(WaveSignature::WhistleBeam);
                 registerNoiseAction(NoiseAction::WhistlePing, 1.0f, m_player.position());
             }
@@ -212,6 +237,8 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
         } else if (key == sf::Keyboard::R || key == sf::Keyboard::X) {
             // Block 3.3: Delayed Echo Trap / Beacon Mine (3.0s countdown)
             if (m_player.placeEchoTrap()) {
+                m_tutStepTrappedOrDecoy = true;
+                updateTutorialProgression();
                 if (m_audio) m_audio->playEffect(SoundEffectId::SwitchClunk, 0.75f, 1.35f);
                 m_statusBannerText = "ECHO BEACON MINE ARMED (3.0S DELAY -> 3 SONAR LURE BURSTS)";
                 m_statusBannerTimer = 2.6f;
@@ -232,7 +259,10 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
             m_statusBannerText = "SONAR TUNED: HIGH FREQUENCY [3] (+1 METAL BOUNCE, UNMASKS MIMICS & SWARMS)";
             m_statusBannerTimer = 2.2f;
         } else if (key == sf::Keyboard::G) {
-            m_player.throwDecoy(m_mouseWorldPos, m_labyrinth.currentRoom().walls);
+            if (m_player.throwDecoy(m_mouseWorldPos, m_labyrinth.currentRoom().walls)) {
+                m_tutStepTrappedOrDecoy = true;
+                updateTutorialProgression();
+            }
         } else if (key == sf::Keyboard::F) {
             tryInteract();
         } else if (key == sf::Keyboard::F5) {
@@ -253,6 +283,15 @@ void Game::handleKeyPressed(sf::Keyboard::Key key) {
             m_state = m_previousState;
             rebuildMenuButtons();
         }
+        return;
+    }
+
+    if (m_state == AppState::MainMenu && m_selectedMenuIndex == 1 &&
+        (key == sf::Keyboard::Left || key == sf::Keyboard::A || key == sf::Keyboard::Right || key == sf::Keyboard::D)) {
+        cycleDifficulty((key == sf::Keyboard::Left || key == sf::Keyboard::A) ? -1 : 1);
+        rebuildMenuButtons();
+        m_selectedMenuIndex = 1;
+        if (m_audio) m_audio->playEffect(SoundEffectId::UiMove, 0.7f, 1.05f);
         return;
     }
 
@@ -291,11 +330,16 @@ void Game::handleMousePressed(sf::Mouse::Button button, sf::Vector2f worldPos) {
     if (m_state == AppState::Playing) {
         if (button == sf::Mouse::Left) {
             if (m_player.triggerDirectionalPing(worldPos, m_acoustics)) {
+                m_tutStepPinged = true;
+                updateTutorialProgression();
                 if (m_audio) m_audio->playWaveSignature(WaveSignature::DirectionalPing);
                 registerNoiseAction(NoiseAction::DirectionalPing, 1.0f, m_player.position());
             }
         } else if (button == sf::Mouse::Right) {
-            m_player.throwDecoy(worldPos, m_labyrinth.currentRoom().walls);
+            if (m_player.throwDecoy(worldPos, m_labyrinth.currentRoom().walls)) {
+                m_tutStepTrappedOrDecoy = true;
+                updateTutorialProgression();
+            }
         }
         return;
     }

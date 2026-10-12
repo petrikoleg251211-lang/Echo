@@ -12,6 +12,7 @@ import {
   Sliders,
   FileCode,
   ShieldAlert,
+  Music,
 } from 'lucide-react';
 import {
   AcousticConfig,
@@ -29,7 +30,7 @@ import {
   WaveSignature,
 } from './engine/types';
 import { createLabyrinthRooms } from './engine/labyrinthData';
-import { soundSynth } from './engine/soundSynthesizer';
+import { OST_TRACKS, type SoundtrackTrackId, soundSynth } from './engine/soundSynthesizer';
 import { CPP_SOURCE_FILES } from './engine/cppSourceBundle';
 import { downloadCppProjectZip } from './engine/zipBuilder';
 
@@ -131,6 +132,10 @@ export default function App() {
     ambientVisibility: 0.04,
     audioEnabled: true,
   });
+
+  const [ostMode, setOstMode] = useState<'auto' | SoundtrackTrackId>('auto');
+  const [ostPlaying, setOstPlaying] = useState<boolean>(false);
+  const [ostVolume, setOstVolume] = useState<number>(0.78);
 
   // Live HUD state synced at ~15Hz for crisp UI without React render overhead
   const [hudMetrics, setHudMetrics] = useState({
@@ -251,6 +256,7 @@ export default function App() {
         ray.maxReflections = acousticConfig.maxReflections;
         ray.signature = signature;
         ray.rgb = [...rgb];
+        ray.crystalSplitApplied = false;
         ray.active = true;
       }
 
@@ -785,6 +791,32 @@ export default function App() {
             x: bestHit.x + normal.x * 0.6 + ray.dir.x * rem,
             y: bestHit.y + normal.y * 0.6 + ray.dir.y * rem,
           };
+
+          // Stage 2: EchoCrystal splits 1 incident ray into 3 chaotic prism rays (+18% energy)
+          if (hitWall.material === 'EchoCrystal' && !ray.crystalSplitApplied) {
+            ray.crystalSplitApplied = true;
+            ray.intensity = Math.min(1.0, ray.intensity * 1.18);
+            const baseAng = Math.atan2(ray.dir.y, ray.dir.x);
+            const offsets = [-0.45, 0.45];
+            for (const off of offsets) {
+              const splitRay = sim.rays[sim.rayCursor];
+              sim.rayCursor = (sim.rayCursor + 1) % MAX_RAYS;
+              const splitAng = baseAng + off;
+              splitRay.pos = { x: ray.pos.x, y: ray.pos.y };
+              splitRay.prevPos = { x: bestHit.x, y: bestHit.y };
+              splitRay.dir = { x: Math.cos(splitAng), y: Math.sin(splitAng) };
+              splitRay.speed = ray.speed * 1.06;
+              splitRay.intensity = ray.intensity * 0.86;
+              splitRay.maxDistance = ray.maxDistance;
+              splitRay.traveled = ray.traveled;
+              splitRay.reflections = ray.reflections;
+              splitRay.maxReflections = ray.maxReflections;
+              splitRay.signature = ray.signature;
+              splitRay.rgb = off < 0 ? [232, 121, 249] : [103, 232, 249];
+              splitRay.crystalSplitApplied = true;
+              splitRay.active = true;
+            }
+          }
         } else {
           ray.pos = nextPos;
         }
@@ -1006,6 +1038,20 @@ export default function App() {
           ? 'Sprint'
           : 'Walk';
 
+        const danger0to1 = Math.min(1, sim.enemy.suspicion / 100);
+        const isPursuing = sim.enemy.active && sim.enemy.state === 'PursuePlayer';
+        const isCheckpoint = currentRoomId === 4 || currentRoomId === 9;
+        const isBoss = currentRoomId >= 13;
+        if (ostPlaying && ostMode === 'auto') {
+          soundSynth.updateAdaptiveMusic(
+            danger0to1,
+            isPursuing,
+            isCheckpoint,
+            isBoss,
+            acousticConfig.audioEnabled
+          );
+        }
+
         setHudMetrics({
           activeRays,
           activeEchoes,
@@ -1025,7 +1071,33 @@ export default function App() {
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [activeTab, gameState, rooms, currentRoomId, activatedSwitches, enterRoom, emitPulse, triggerInteract, acousticConfig.ambientVisibility]);
+  }, [activeTab, gameState, rooms, currentRoomId, activatedSwitches, enterRoom, emitPulse, triggerInteract, acousticConfig.ambientVisibility, acousticConfig.audioEnabled, ostPlaying, ostMode]);
+
+  const handleSelectOstMode = (mode: 'auto' | SoundtrackTrackId) => {
+    setOstMode(mode);
+    setOstPlaying(true);
+    soundSynth.setMusicMode(mode, true);
+    if (mode === 'auto') {
+      setStatusToast('OST switched to Auto-Adaptive Stem Mixing (Exploration / Tension / Pursuit / Sanctum / Boss).');
+    } else {
+      const meta = OST_TRACKS.find((t) => t.id === mode);
+      if (meta) {
+        setStatusToast(`Playing OST Track: ${meta.title} (${meta.bpm} BPM · ${meta.keySignature})`);
+      }
+    }
+  };
+
+  const handleToggleOstPlayback = () => {
+    if (ostPlaying) {
+      soundSynth.stopMusic();
+      setOstPlaying(false);
+      setStatusToast('Soundtrack playback paused.');
+    } else {
+      setOstPlaying(true);
+      soundSynth.setMusicMode(ostMode, true);
+      setStatusToast('EchoLabyrinth Adaptive Original Soundtrack engaged.');
+    }
+  };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1427,6 +1499,57 @@ export default function App() {
                   <span>Download C++17 SFML (.ZIP)</span>
                 </button>
               </div>
+
+              <hr className="border-slate-800/80" />
+
+              {/* Compact Adaptive OST Player in Play Sidebar */}
+              <div className="space-y-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-slate-100 font-semibold">
+                    <Music className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Adaptive OST Engine</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleToggleOstPlayback}
+                    className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors ${
+                      ostPlaying
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-sky-400 text-slate-950 hover:bg-sky-300'
+                    }`}
+                  >
+                    {ostPlaying ? 'OST Active' : 'Start OST'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectOstMode('auto')}
+                    className={`px-2 py-1.5 rounded text-[11px] font-mono truncate border transition-colors ${
+                      ostPlaying && ostMode === 'auto'
+                        ? 'bg-sky-400/20 border-sky-400 text-sky-300 font-semibold'
+                        : 'bg-slate-900/70 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Auto-Adaptive
+                  </button>
+                  {OST_TRACKS.map((tr, idx) => (
+                    <button
+                      key={tr.id}
+                      type="button"
+                      onClick={() => handleSelectOstMode(tr.id)}
+                      className={`px-2 py-1.5 rounded text-[11px] font-mono truncate border transition-colors ${
+                        ostPlaying && ostMode === tr.id
+                          ? 'bg-sky-400/20 border-sky-400 text-sky-300 font-semibold'
+                          : 'bg-slate-900/70 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                      title={tr.title}
+                    >
+                      0{idx + 1}. {tr.title.split(' ')[0]}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </aside>
           </div>
         )}
@@ -1628,6 +1751,124 @@ export default function App() {
                       >
                         Audition Tone
                       </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Full-Width EchoLabyrinth Original Soundtrack (OST) Studio & WAV Exporter */}
+            <div className="lg:col-span-12 bg-[#0e131b] border border-slate-800/80 rounded-lg p-6 space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Music className="w-5 h-5 text-sky-400" />
+                    <h2 className="font-display text-xl font-semibold text-slate-100">
+                      EchoLabyrinth Original Soundtrack (OST) — 5-Layer Procedural DSP Composer
+                    </h2>
+                  </div>
+                  <p className="text-sm text-slate-400 mt-1">
+                    Synthesized in real time in both C++17 (<code className="text-sky-300">AudioManager.cpp</code> with <code className="text-sky-300">--export-ost</code>) and Web Audio using circular Schroeder reverb, FM metallic chimes, dark gothic organ, and vowel-formant abyssal choir synthesis.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-xs font-mono text-slate-300 bg-[#090d14] px-3 py-1.5 rounded border border-slate-800">
+                    <span>OST Gain</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.02}
+                      value={ostVolume}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        setOstVolume(v);
+                        soundSynth.setMusicMasterVolume(v);
+                      }}
+                      className="w-24 accent-sky-400"
+                    />
+                    <span>{Math.round(ostVolume * 100)}%</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectOstMode('auto')}
+                    className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-colors border ${
+                      ostPlaying && ostMode === 'auto'
+                        ? 'bg-sky-400/20 border-sky-400 text-sky-300'
+                        : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+                    }`}
+                  >
+                    Auto-Adaptive Mix
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleOstPlayback}
+                    className={`px-4 py-2 rounded-md text-xs font-semibold transition-colors ${
+                      ostPlaying
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+                        : 'bg-sky-400 text-slate-950 hover:bg-sky-300'
+                    }`}
+                  >
+                    {ostPlaying ? 'Stop OST Playback' : 'Play Soundtrack'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                {OST_TRACKS.map((track) => {
+                  const isSelected = ostPlaying && ostMode === track.id;
+                  return (
+                    <div
+                      key={track.id}
+                      className={`p-4 rounded-lg border flex flex-col justify-between gap-4 transition-colors ${
+                        isSelected
+                          ? 'bg-sky-950/30 border-sky-400/70'
+                          : 'bg-[#090d14] border-slate-800/90'
+                      }`}
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-sky-400">
+                          <span>{track.bpm} BPM</span>
+                          <span>{track.keySignature}</span>
+                        </div>
+                        <h3 className="text-sm font-semibold text-slate-100 leading-snug">
+                          {track.title}
+                        </h3>
+                        <p className="text-[11px] font-mono text-slate-500 truncate">
+                          {track.filename}
+                        </p>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          {track.description}
+                        </p>
+                      </div>
+
+                      <div className="pt-2 flex flex-col gap-2 border-t border-slate-800/80">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectOstMode(track.id)}
+                          className={`w-full py-1.5 px-3 rounded text-xs font-semibold transition-colors ${
+                            isSelected
+                              ? 'bg-sky-400 text-slate-950'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                          }`}
+                        >
+                          {isSelected ? 'Playing Loop...' : 'Solo Audition'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundSynth.exportTrackWav(track.id);
+                            setStatusToast(`Exported ${track.filename} (44.1kHz 16-bit PCM WAV).`);
+                          }}
+                          className="w-full py-1.5 px-3 rounded text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Export .WAV</span>
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

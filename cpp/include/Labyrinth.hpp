@@ -11,15 +11,19 @@
 namespace echo {
 
 enum class EnemyVariant : std::uint8_t {
-    Stalker = 0,       // Standard Acoustic Hunter (balanced speed, investigates sounds)
-    Warden = 1,        // Heavy Armored Warden (slow, high HP, emits periodic floor tremors)
-    Shrieker = 2,      // Fast Sonic Shrieker (high sensitivity, fires ranged SonicBolts)
-    Phantom = 3,       // Phase Phantom (fast, takes bonus damage from reflected sonar rays)
-    AbyssalBoss = 4,   // The Choir Sovereign (3-phase boss with radial shockwaves & bolt volleys)
-    SilentStalker = 5, // Block 4.1: Emits zero passive tremors while moving; only visible via sonar; inhales 0.5s before attack
-    DeafBrute = 6,     // Block 4.2: Deaf to airborne sounds; only reacts to ground vibrations (Sprint, Stomp, RadialPulse, ShaleCrack)
-    Mimic = 7,         // Block 4.3: Disguised as resonator crystal emitting lure waves; unmasks on High-freq/Whistle scan or close approach
-    EchoSwarm = 8      // Block 4.4: Acoustic parasite swarm; repeats & amplifies nearby player sounds (+12 noise) to alert other hunters
+    Stalker = 0,             // Standard Acoustic Hunter (balanced speed, investigates sounds)
+    Warden = 1,              // Heavy Armored Warden (slow, high HP, emits periodic floor tremors)
+    Shrieker = 2,            // Fast Sonic Shrieker (high sensitivity, fires ranged SonicBolts)
+    Phantom = 3,             // Phase Phantom (fast, takes bonus damage from reflected sonar rays)
+    AbyssalBoss = 4,         // The Choir Sovereign (3-phase boss with radial shockwaves & bolt volleys)
+    SilentStalker = 5,       // Block 4.1: Emits zero passive tremors while moving; only visible via sonar; inhales 0.5s before attack
+    DeafBrute = 6,           // Block 4.2: Deaf to airborne sounds; only reacts to ground vibrations (Sprint, Stomp, RadialPulse, ShaleCrack)
+    Mimic = 7,               // Block 4.3: Disguised as resonator crystal emitting lure waves; unmasks on High-freq/Whistle scan or close approach
+    EchoSwarm = 8,           // Block 4.4: Acoustic parasite swarm; repeats & amplifies nearby player sounds (+12 noise) to alert other hunters
+    Leech = 9,               // Stage 2: Acoustic Parasite; latches onto player draining stamina & pulsing +8 noise until shaken off by Sprint/Pulse/Stomp
+    Banshee = 10,            // Stage 2: Wailing Siren; unleashes periodic BansheeWail screams (+22 noise) that alert hunters across the chamber
+    TuningForkConstruct = 11,// Stage 2: Resonance Automaton; dampens Low/Mid direct hits, shatters (2.4x dmg) on High-Freq [3] or reflected rays
+    TheConductor = 12        // Stage 2: Chamber 16 Mini-Boss; orchestrates 4-beam harmonic cross volleys & frequency-shielded phases
 };
 
 enum class PropType : std::uint8_t {
@@ -116,6 +120,7 @@ struct RoomDefinition {
     int gridY{0};
     int distFromStart{0};
     RoomType type{RoomType::Combat};
+    BiomeId biome{BiomeId::DrownedGalleries};
     std::array<int, 4> neighbors{{-1, -1, -1, -1}}; // North, East, South, West room IDs
 
     std::string name;
@@ -182,6 +187,7 @@ public:
     std::size_t roomCount() const noexcept { return m_rooms.size(); }
 
     int bossRoomId() const noexcept { return m_bossRoomId; }
+    int conductorRoomId() const noexcept { return m_conductorRoomId; }
     int exitRoomId() const noexcept { return m_exitRoomId; }
 
     int findRoomAtGrid(int gx, int gy) const noexcept;
@@ -240,6 +246,7 @@ private:
     std::uint32_t m_runSeed{0xEC402026u};
     std::size_t m_targetRoomCount{cfg::kDefaultRunRoomCount};
     int m_bossRoomId{0};
+    int m_conductorRoomId{15};
     int m_exitRoomId{0};
 
     std::size_t m_currentRoomIndex{0};

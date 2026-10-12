@@ -63,8 +63,8 @@ interface Blueprint {
 const BLUEPRINTS: Blueprint[] = [
   {
     name: '01. Entry Cistern',
-    sector: 'Upper Drainage',
-    hint: 'Click (or press E) to cast a Directional Sonar Ping. Press Space for a 360° Radial Pulse. Reach the East Conduit.',
+    sector: 'Biome I · The Drowned Galleries',
+    hint: 'Click (or press E) to cast a Directional Sonar Ping. Press Space for a 360° Radial Pulse. Water waves carry +35% farther.',
     primaryMat: 'Stone',
     secondaryMat: 'Water',
     hasEnemy: false,
@@ -77,17 +77,17 @@ const BLUEPRINTS: Blueprint[] = [
   },
   {
     name: '02. Echoing Gallery',
-    sector: 'Upper Drainage',
-    hint: 'Forged iron baffles reflect 94% of wave energy in amber trajectories. Bounce pings off angled plates to see around corners.',
-    primaryMat: 'Stone',
-    secondaryMat: 'Metal',
+    sector: 'Biome I · The Drowned Galleries',
+    hint: 'Subterranean water channels conduct sonar waves 35% farther while muffling footstep splashes (-25% noise).',
+    primaryMat: 'Water',
+    secondaryMat: 'Stone',
     hasEnemy: false,
     isCheckpoint: false,
     layoutVariant: 1,
   },
   {
     name: '03. Flooded Sluice',
-    sector: 'Aqueduct Sector',
+    sector: 'Biome I · The Drowned Galleries',
     hint: 'A blind Listener patrols the far bank. Activate the Harmonic Lever (F) to open the violet Resonance Gate on the east wall.',
     primaryMat: 'Water',
     secondaryMat: 'Stone',
@@ -95,95 +95,95 @@ const BLUEPRINTS: Blueprint[] = [
     isCheckpoint: false,
     layoutVariant: 2,
     lore: {
-      title: 'Acoustic Log #02 — The Listeners',
-      excerpt: 'They have no eyes. They triangulate the origin of high-amplitude vibrations. Hold Shift to sneak when crossing open stone.',
+      title: 'Acoustic Log #02 — The Listeners & Leeches',
+      excerpt: 'In the flooded galleries, Acoustic Leeches latch onto careless surveyors, draining stamina until shaken loose by a Sprint or Radial Pulse.',
     },
   },
   {
-    name: '04. Iron Foundry',
-    sector: 'Industrial Core',
-    hint: 'High metallic reflection carries sound across the room. Hold Shift to keep footstep intensity below the Listener threshold.',
-    primaryMat: 'Metal',
-    secondaryMat: 'Metal',
+    name: '04. Prismatic Vestibule',
+    sector: 'Biome II · The Crystal Vaults',
+    hint: 'Magenta EchoCrystal pillars split 1 sonar ray into 3 chaotic prism rays (+18% energy) to illuminate blind corners.',
+    primaryMat: 'Stone',
+    secondaryMat: 'EchoCrystal',
     hasEnemy: true,
     isCheckpoint: false,
-    layoutVariant: 3,
+    layoutVariant: 1,
   },
   {
-    name: '05. Whispering Ossuary',
-    sector: 'Catacomb Tier',
-    hint: 'Damp moss absorbs 65% of acoustic energy (green traces fade quickly). Checkpoint reached.',
-    primaryMat: 'DampMoss',
+    name: '05. Crystal Choir Vault',
+    sector: 'Biome II · The Crystal Vaults',
+    hint: 'EchoCrystal monoliths refract sonar pulses across the entire vault. Watch out for Banshee wails! Checkpoint reached.',
+    primaryMat: 'EchoCrystal',
     secondaryMat: 'Stone',
     hasEnemy: false,
     isCheckpoint: true,
     layoutVariant: 0,
     lore: {
-      title: 'Acoustic Log #03 — Moss Dampening',
-      excerpt: 'Where subterranean moss coats the crypts, echoes die almost immediately—blinding the surveyor, yet muffling footsteps from predators.',
+      title: 'Acoustic Log #03 — Prismatic Refraction',
+      excerpt: 'EchoCrystal facets split any incident acoustic beam into three harmonic prism rays, lighting up the dark—and alerting Banshees.',
     },
   },
   {
-    name: '06. Collapsed Vault',
-    sector: 'Catacomb Tier',
-    hint: 'Right-Click (or press G) to throw a Decoy Stone into the northern alcove, luring the Listener away from the Resonance Lever.',
+    name: '06. Refraction Sanctum',
+    sector: 'Biome II · The Crystal Vaults',
+    hint: 'Right-Click (or press G) to throw a Decoy Stone into the northern alcove, luring the hunter away from the Resonance Lever.',
     primaryMat: 'Stone',
-    secondaryMat: 'DampMoss',
+    secondaryMat: 'EchoCrystal',
     hasEnemy: true,
     isCheckpoint: false,
     layoutVariant: 2,
   },
   {
-    name: '07. Resonance Chamber',
-    sector: 'Acoustic Sanctum',
-    hint: 'Angled metallic mirrors create triple-bounce reflections that illuminate the entire chamber from a single directional ping.',
-    primaryMat: 'Metal',
-    secondaryMat: 'Stone',
-    hasEnemy: false,
+    name: '07. Conductor’s Amphitheater (Mini-Boss)',
+    sector: 'Biome II · The Crystal Vaults (Chamber 16)',
+    hint: 'Elite Chamber: Angled EchoCrystal mirrors create multi-bounce reflections needed to break Tuning Fork & Conductor shields.',
+    primaryMat: 'EchoCrystal',
+    secondaryMat: 'Metal',
+    hasEnemy: true,
     isCheckpoint: false,
     layoutVariant: 1,
     lore: {
-      title: 'Acoustic Log #04 — Harmonic Gates',
-      excerpt: 'The purple Resonance Gates only retract when their paired tuning lever vibrates at 440 Hz.',
+      title: 'Acoustic Log #04 — The Conductor',
+      excerpt: 'In the sixteenth chamber stands The Conductor, sweeping a four-beam rotating acoustic cross across the crystal amphitheater.',
     },
   },
   {
-    name: '08. Warden Watchpost',
-    sector: 'Security Ring',
-    hint: 'Narrow stone chicanes restrict movement. Scout the patrol cadence with quiet directional pings before advancing.',
-    primaryMat: 'Stone',
+    name: '08. Steam-Hammer Press Hall',
+    sector: 'Biome III · The Iron Foundry',
+    hint: 'Forged iron reflects 94% of wave energy. In the native C++ Foundry, periodic Steam-Hammer clangs mask footsteps by -75%.',
+    primaryMat: 'Metal',
     secondaryMat: 'Metal',
     hasEnemy: true,
     isCheckpoint: false,
     layoutVariant: 3,
   },
   {
-    name: '09. Subterranean Canal',
-    sector: 'Aqueduct Sector',
-    hint: 'Unlock the east canal lock via the Harmonic Lever (F) while evading the patrolling Listener. Checkpoint active.',
-    primaryMat: 'Water',
-    secondaryMat: 'Metal',
+    name: '09. Slag Sluiceway',
+    sector: 'Biome III · The Iron Foundry',
+    hint: 'Unlock the east foundry lock via the Harmonic Lever (F) while evading the patrolling Warden. Checkpoint active.',
+    primaryMat: 'Metal',
+    secondaryMat: 'Water',
     hasEnemy: true,
     isCheckpoint: true,
     layoutVariant: 2,
     lore: {
-      title: 'Acoustic Log #05 — Hydro-Acoustics',
-      excerpt: 'Water channels scatter wavefronts at 64% intensity, revealing the bridge pilings in shimmering teal.',
+      title: 'Acoustic Log #05 — Foundry Pistons',
+      excerpt: 'Every 5.5 seconds the colossal steam-hammers strike the anvil floor, masking a surveyor’s sprint from nearby Wardens.',
     },
   },
   {
-    name: '10. Ritual Atrium',
-    sector: 'Deep Vaults',
-    hint: 'Concentric stone monoliths form an acoustic shadow in the center of the atrium.',
-    primaryMat: 'Stone',
+    name: '10. Tuning Fork Garrison',
+    sector: 'Biome III · The Iron Foundry',
+    hint: 'Stationary Tuning Fork Constructs block direct pings—bounce sonar off angled iron walls to deal 2.25x reflected damage.',
+    primaryMat: 'Metal',
     secondaryMat: 'Stone',
     hasEnemy: true,
     isCheckpoint: false,
     layoutVariant: 1,
   },
   {
-    name: '11. Rust Corridor',
-    sector: 'Industrial Core',
+    name: '11. Rust Bulkhead',
+    sector: 'Biome III · The Iron Foundry',
     hint: 'Corroded iron bulkheads amplify sprinting footsteps. Use Sneak stance (Shift) and Decoy Stones (Right-Click).',
     primaryMat: 'Metal',
     secondaryMat: 'DampMoss',
@@ -192,49 +192,49 @@ const BLUEPRINTS: Blueprint[] = [
     layoutVariant: 3,
     lore: {
       title: 'Acoustic Log #06 — Bulkhead Resonance',
-      excerpt: 'One careless sprint on iron grating alerts every entity within sixty meters.',
+      excerpt: 'One careless sprint on unmasked iron grating alerts every entity within sixty meters.',
     },
   },
   {
-    name: '12. Generator Hall',
-    sector: 'Industrial Core',
-    hint: 'Activate the turbine bypass lever (F) to open the eastern blast door. Checkpoint active.',
-    primaryMat: 'Metal',
-    secondaryMat: 'Metal',
+    name: '12. Spore Threshold',
+    sector: 'Biome IV · The Living Mycelium',
+    hint: 'Organic mycelium walls absorb sound (1.55x faster silence decay). Activate the lever (F) to open the eastern gate.',
+    primaryMat: 'DampMoss',
+    secondaryMat: 'Stone',
     hasEnemy: true,
     isCheckpoint: true,
     layoutVariant: 2,
   },
   {
-    name: '13. Silent Archive',
-    sector: 'Deep Vaults',
-    hint: 'Moss-covered archive stacks deaden echoes. Navigate the aisles carefully.',
+    name: '13. Bioluminescent Grove',
+    sector: 'Biome IV · The Living Mycelium',
+    hint: 'Mycelial mats swallow echoes rapidly, but glowing spores softly reveal moving predators in the dark.',
     primaryMat: 'DampMoss',
-    secondaryMat: 'Stone',
+    secondaryMat: 'EchoCrystal',
     hasEnemy: true,
     isCheckpoint: false,
     layoutVariant: 0,
     lore: {
-      title: 'Acoustic Log #07 — The Final Shaft',
-      excerpt: 'Two chambers remain before the surface lift. Keep at least one decoy stone for the Warden Sanctum.',
+      title: 'Acoustic Log #07 — The Living Mycelium',
+      excerpt: 'The fungal carpet drinks sound like dry earth drinks rain, yet its bioluminescent spores flare whenever a predator stalks across them.',
     },
   },
   {
-    name: '14. Warden Sanctum',
-    sector: 'Abyssal Threshold',
+    name: '14. Sovereign Antechamber',
+    sector: 'Biome IV · The Living Mycelium',
     hint: 'Lure the sanctum guardian away from the central harmonic lever (F) to unseal the Ascent Gate.',
-    primaryMat: 'Stone',
-    secondaryMat: 'Metal',
+    primaryMat: 'DampMoss',
+    secondaryMat: 'EchoCrystal',
     hasEnemy: true,
     isCheckpoint: false,
     layoutVariant: 2,
   },
   {
     name: '15. Ascent Gate',
-    sector: 'Surface Conduit',
+    sector: 'Biome IV · Surface Conduit',
     hint: 'Emit a final pulse to illuminate the Surface Lift on the eastern platform and complete your escape.',
-    primaryMat: 'Metal',
-    secondaryMat: 'Stone',
+    primaryMat: 'EchoCrystal',
+    secondaryMat: 'Metal',
     hasEnemy: false,
     isCheckpoint: true,
     layoutVariant: 1,
@@ -250,6 +250,14 @@ export function createLabyrinthRooms(): RoomDefinition[] {
     const walls: WallSegment[] = [];
     const hasWest = i > 0;
     const hasEast = true; // Room 14 east portal is the Escape Lift
+    const biome =
+      i < 3
+        ? 'DrownedGalleries'
+        : i < 7
+        ? 'CrystalVaults'
+        : i < 11
+        ? 'IronFoundry'
+        : 'LivingMycelium';
 
     addRoomPerimeter(walls, bp.primaryMat, hasWest, hasEast);
 
@@ -263,17 +271,22 @@ export function createLabyrinthRooms(): RoomDefinition[] {
       addBox(walls, 290, 180, 90, 240, bp.secondaryMat);
       addBox(walls, 580, 110, 100, 150, bp.primaryMat);
       addBox(walls, 580, 340, 100, 150, bp.primaryMat);
-      // Angled acoustic mirrors
+      // Angled acoustic mirrors (EchoCrystal in CrystalVaults, Metal elsewhere)
+      const mirrorMat: SurfaceMaterial = biome === 'CrystalVaults' ? 'EchoCrystal' : 'Metal';
       walls.push(
-        { a: { x: 430, y: 120 }, b: { x: 520, y: 200 }, material: 'Metal' },
-        { a: { x: 430, y: 480 }, b: { x: 520, y: 400 }, material: 'Metal' },
-        { a: { x: 750, y: 200 }, b: { x: 830, y: 280 }, material: 'Metal' }
+        { a: { x: 430, y: 120 }, b: { x: 520, y: 200 }, material: mirrorMat },
+        { a: { x: 430, y: 480 }, b: { x: 520, y: 400 }, material: mirrorMat },
+        { a: { x: 750, y: 200 }, b: { x: 830, y: 280 }, material: mirrorMat }
       );
     } else if (bp.layoutVariant === 2) {
       addBox(walls, 260, 140, 110, 140, bp.secondaryMat);
       addBox(walls, 480, 260, 120, 170, bp.primaryMat);
       addBox(walls, 700, 130, 95, 160, bp.secondaryMat);
-      walls.push({ a: { x: 380, y: 430 }, b: { x: 450, y: 360 }, material: 'Metal' });
+      walls.push({
+        a: { x: 380, y: 430 },
+        b: { x: 450, y: 360 },
+        material: biome === 'CrystalVaults' ? 'EchoCrystal' : 'Metal',
+      });
     } else {
       addBox(walls, 230, 100, 85, 220, bp.secondaryMat);
       addBox(walls, 430, 270, 90, 220, bp.primaryMat);
@@ -348,6 +361,7 @@ export function createLabyrinthRooms(): RoomDefinition[] {
       id: i,
       name: bp.name,
       sectorTitle: bp.sector,
+      biome,
       acousticHint: bp.hint,
       playerDefaultSpawn: { x: 135, y: 300 },
       walls,
@@ -360,3 +374,4 @@ export function createLabyrinthRooms(): RoomDefinition[] {
     };
   });
 }
+

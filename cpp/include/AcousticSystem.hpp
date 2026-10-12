@@ -50,6 +50,7 @@ struct AcousticRay {
     bool emittedByPlayer{true};
     bool metalBonusApplied{false};
     bool waterBoostApplied{false};
+    bool crystalSplitApplied{false};
     bool active{false};
 };
 
@@ -108,7 +109,7 @@ public:
     // Block 2.4: Emits concentric water rings when stepping on water (2x sound range)
     void emitWaterRipples(sf::Vector2f origin, float baseRadius = 240.0f);
 
-    // Block 2: Updates rays, reflections (Moss -80%, Metal +2 bounces, Glass shattering, Water 2x range)
+    // Block 2: Updates rays, reflections (Moss -80%, Metal +2 bounces, Glass shattering, Water 2x range, EchoCrystal splitting)
     // and Resonator Column 4s humming.
     std::vector<int> update(
         float dt,
@@ -168,6 +169,9 @@ public:
     // Block 2.3: Consumes count of Glass walls shattered since last check (each adds +40 noise)
     int consumeShatteredGlassCount(sf::Vector2f* outLastShatterPos = nullptr) noexcept;
 
+    // Stage 2: Consumes count of EchoCrystal ray splits since last check
+    int consumeCrystalSplitCount() noexcept;
+
     void setRayDensityScale(float scale) noexcept { m_rayDensityScale = std::clamp(scale, 0.4f, 2.0f); }
     float rayDensityScale() const noexcept { return m_rayDensityScale; }
 
@@ -191,6 +195,8 @@ private:
         AcousticFrequency freq
     );
 
+    void spawnSplitRay(const AcousticRay& parentRay, sf::Vector2f splitOrigin, float angleOffsetRad) noexcept;
+
     std::vector<AcousticRay> m_rays;
     std::vector<WallEchoTrace> m_echoes;
     std::vector<ExpandingWaveRing> m_rings;
@@ -205,6 +211,7 @@ private:
     std::uint32_t m_totalPulsesEmitted{0};
 
     int m_shatteredGlassCount{0};
+    int m_crystalSplitCount{0};
     sf::Vector2f m_lastGlassShatterPos{640.0f, 400.0f};
 
     float m_rayDensityScale{1.0f};

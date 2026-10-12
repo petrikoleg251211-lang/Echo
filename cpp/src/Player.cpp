@@ -46,8 +46,9 @@ Player::Player() = default;
 
 void Player::reset(sf::Vector2f spawnPos) noexcept {
     m_position = spawnPos;
-    m_health = 6;
-    m_maxHealth = 6;
+    m_oneLifeLocked = false;
+    m_health = cfg::balance::kDefaultBalance.playerBaseHp;
+    m_maxHealth = cfg::balance::kDefaultBalance.playerBaseHp;
     m_invulnTimer = 0.0f;
     m_stamina = 100.0f;
     m_echoShards = 0;
@@ -91,76 +92,6 @@ bool Player::spendEchoShards(int cost) noexcept {
     if (cost < 0 || m_echoShards < cost) return false;
     m_echoShards -= cost;
     return true;
-}
-
-bool Player::hasRelic(RelicId id) const noexcept {
-    return std::find(m_relics.begin(), m_relics.end(), id) != m_relics.end();
-}
-
-bool Player::addRelic(RelicId id, AcousticSystem* acoustics) {
-    if (hasRelic(id)) return false;
-    m_relics.push_back(id);
-
-    if (id == RelicId::PiezoArmorCore) {
-        m_maxHealth += 2;
-        m_health = std::min(m_maxHealth, m_health + 2);
-    } else if (id == RelicId::PhantomDecoyRig) {
-        m_decoyCount += 3;
-        m_echoTrapCount += 2;
-    } else if (id == RelicId::UltrasonicLens) {
-        m_echoTrapCount += 2;
-    } else if (id == RelicId::PrismaticMirror && acoustics != nullptr) {
-        const auto nextRefl = static_cast<std::uint8_t>(std::min<int>(8, acoustics->maxReflections() + 2));
-        acoustics->setMaxReflections(nextRefl);
-    }
-    return true;
-}
-
-float Player::sonarDamageMultiplier(bool isReflectedHit, bool isHighFreqHit) const noexcept {
-    float mult = 1.0f;
-    if (hasRelic(RelicId::HarmonicAmplifier)) {
-        mult *= 1.40f;
-    }
-    if (isReflectedHit) {
-        mult *= hasRelic(RelicId::PrismaticMirror) ? 1.55f : 1.20f;
-        // Synergy: FocusedTransducer + PrismaticMirror = Phase-Locked Resonance Beam
-        if (hasRelic(RelicId::HarmonicAmplifier) && hasRelic(RelicId::PrismaticMirror)) {
-            mult *= 1.25f;
-        }
-    }
-    if (isHighFreqHit) {
-        mult *= hasRelic(RelicId::UltrasonicLens) ? 1.56f : 1.12f;
-    }
-    if (hasRelic(RelicId::AbyssalTuningFork)) {
-        mult *= 1.30f;
-    }
-    return mult;
-}
-
-float Player::resonatorChargeMultiplier() const noexcept {
-    return hasRelic(RelicId::EchoSiphonCoil) ? 2.0f : 1.0f;
-}
-
-float Player::noiseGainMultiplier(bool isFootstep) const noexcept {
-    float mult = 1.0f;
-    if (hasRelic(RelicId::SilentStep)) {
-        mult *= 0.65f;
-    }
-    if (isFootstep && hasRelic(RelicId::MossTreadBoots)) {
-        mult *= 0.55f;
-    }
-    if (!isFootstep && hasRelic(RelicId::PhaseDampener)) {
-        mult *= 0.70f;
-    }
-    return mult;
-}
-
-float Player::silenceDecayMultiplier() const noexcept {
-    return hasRelic(RelicId::PhaseDampener) ? 1.50f : 1.0f;
-}
-
-float Player::shardGainMultiplier() const noexcept {
-    return hasRelic(RelicId::AbyssalTuningFork) ? 1.25f : 1.0f;
 }
 
 void Player::setFrequency(AcousticFrequency freq, AcousticSystem& acoustics) noexcept {

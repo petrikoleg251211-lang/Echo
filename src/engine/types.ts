@@ -1,4 +1,55 @@
-export type SurfaceMaterial = 'Stone' | 'Metal' | 'Water' | 'DampMoss' | 'ResonanceDoor';
+export type SurfaceMaterial =
+  | 'Stone'
+  | 'Metal'
+  | 'Water'
+  | 'DampMoss'
+  | 'ResonanceDoor'
+  | 'EchoCrystal';
+
+export type BiomeId =
+  | 'DrownedGalleries'
+  | 'CrystalVaults'
+  | 'IronFoundry'
+  | 'LivingMycelium';
+
+export interface BiomeSpec {
+  id: BiomeId;
+  name: string;
+  subtitle: string;
+  acousticRule: string;
+  accentHex: string;
+}
+
+export const BIOME_SPECS: Record<BiomeId, BiomeSpec> = {
+  DrownedGalleries: {
+    id: 'DrownedGalleries',
+    name: 'THE DROWNED GALLERIES',
+    subtitle: 'Biome I (Rooms 1-8) · Hydro-Acoustic Conduction',
+    acousticRule: 'Footsteps muffled (-25% noise), Water waves travel +35% farther',
+    accentHex: '#2dd4bf',
+  },
+  CrystalVaults: {
+    id: 'CrystalVaults',
+    name: 'THE CRYSTAL VAULTS',
+    subtitle: 'Biome II (Rooms 9-16) · Prismatic Refraction & Room 16 Mini-Boss',
+    acousticRule: 'EchoCrystal splits 1 ray into 3 chaotic prism rays; shattering glass spikes +24 noise',
+    accentHex: '#e879f9',
+  },
+  IronFoundry: {
+    id: 'IronFoundry',
+    name: 'THE IRON FOUNDRY',
+    subtitle: 'Biome III (Rooms 17-24) · Industrial Steam-Hammer Masking',
+    acousticRule: '94% metal reflection; periodic Steam-Hammer Press masks footsteps (-75% noise for 1.35s)',
+    accentHex: '#f59e0b',
+  },
+  LivingMycelium: {
+    id: 'LivingMycelium',
+    name: 'THE LIVING MYCELIUM',
+    subtitle: 'Biome IV (Rooms 25-32) · Bioluminescent Spore Absorption',
+    acousticRule: 'Organic walls absorb sound (1.55x faster silence decay); spores softly reveal moving hunters',
+    accentHex: '#4ade80',
+  },
+};
 
 export type WaveSignature =
   | 'FootstepSneak'
@@ -60,14 +111,14 @@ export const MATERIAL_SPECS: Record<SurfaceMaterial, MaterialSpec> = {
     rgb: [45, 212, 191],
     hex: '#2dd4bf',
     label: 'Subterranean Water',
-    acousticNote: '64% reflectivity · Teal ripple scatter',
+    acousticNote: '64% reflectivity · Teal ripple scatter (+35% range)',
   },
   DampMoss: {
     reflectivity: 0.35,
     persistenceSec: 1.6,
     rgb: [74, 222, 128],
     hex: '#4ade80',
-    label: 'Damp Moss',
+    label: 'Damp Moss / Mycelium',
     acousticNote: '35% reflectivity · High acoustic absorption',
   },
   ResonanceDoor: {
@@ -77,6 +128,14 @@ export const MATERIAL_SPECS: Record<SurfaceMaterial, MaterialSpec> = {
     hex: '#a78bfa',
     label: 'Resonance Gate',
     acousticNote: '88% reflectivity · Unlocks via harmonic lever',
+  },
+  EchoCrystal: {
+    reflectivity: 0.96,
+    persistenceSec: 5.8,
+    rgb: [232, 121, 249],
+    hex: '#e879f9',
+    label: 'Echo Crystal Prism',
+    acousticNote: '96% reflectivity · Splits 1 ray into 3 chaotic prism rays (+18% energy)',
   },
 };
 
@@ -100,6 +159,7 @@ export interface AcousticRay {
   maxReflections: number;
   signature: WaveSignature;
   rgb: [number, number, number];
+  crystalSplitApplied?: boolean;
   active: boolean;
 }
 
@@ -151,6 +211,7 @@ export interface RoomDefinition {
   id: number;
   name: string;
   sectorTitle: string;
+  biome: BiomeId;
   acousticHint: string;
   playerDefaultSpawn: Vec2;
   walls: WallSegment[];
@@ -161,6 +222,7 @@ export interface RoomDefinition {
   isCheckpoint: boolean;
   isExitRoom: boolean;
 }
+
 
 export interface AcousticConfig {
   waveSpeedMultiplier: number;

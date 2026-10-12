@@ -71,14 +71,22 @@ public:
         SurfaceMaterial roomDefault
     ) const noexcept;
 
-    // Hull Integrity (HP) & Combat Damage
+    // Hull Integrity (HP) & Combat Damage (supports 1-HP Silence Hardcore mode)
     int health() const noexcept { return m_health; }
     int maxHealth() const noexcept { return m_maxHealth; }
     void setHealth(int hp) noexcept { m_health = std::clamp(hp, 0, m_maxHealth); }
     void setMaxHealth(int maxHp) noexcept {
-        m_maxHealth = std::max(2, maxHp);
+        m_maxHealth = m_oneLifeLocked ? 1 : std::max(1, maxHp);
         m_health = std::min(m_health, m_maxHealth);
     }
+    void setOneLifeLocked(bool locked) noexcept {
+        m_oneLifeLocked = locked;
+        if (locked) {
+            m_maxHealth = 1;
+            m_health = std::min(m_health, 1);
+        }
+    }
+    bool isOneLifeLocked() const noexcept { return m_oneLifeLocked; }
     void heal(int amount) noexcept;
     bool applyDamage(int amount, AcousticSystem& acoustics);
     bool isInvulnerable() const noexcept { return m_invulnTimer > 0.0f; }
@@ -129,6 +137,7 @@ private:
 
     int m_health{6};
     int m_maxHealth{6};
+    bool m_oneLifeLocked{false};
     float m_invulnTimer{0.0f};
 
     float m_stamina{100.0f};

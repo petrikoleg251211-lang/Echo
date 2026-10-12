@@ -22,6 +22,10 @@ struct SaveData {
     int echoShards{0};
     int ghostClearsThisRun{0};
 
+    // Stage 1.3 & 1.4: Difficulty Mode (0=Explorer, 1=Surveyor, 2=Abyssal, 3=Silence) & Tutorial Flag
+    int difficulty{1};
+    bool tutorialDone{false};
+
     // Audio & Graphics Settings
     float masterVolume{80.0f};
     float musicVolume{75.0f};
@@ -54,6 +58,7 @@ public:
     static bool saveToFile(const std::string& filePath, const SaveData& data);
     static bool loadFromFile(const std::string& filePath, SaveData& outData);
     static std::uint32_t computeChecksum(const SaveData& data) noexcept;
+    static std::uint32_t computeChecksumV5(const SaveData& data) noexcept;
     static std::uint32_t computeChecksumV4(const SaveData& data) noexcept;
 };
 

@@ -250,6 +250,12 @@ void AssetManager::buildProceduralTextures(bool uploadGpuTextures) {
                     if (((x + y) % 16) < 3 || ((64 - x + y) % 16) < 3) {
                         r += 35; g += 22; b += 52;
                     }
+                } else if (mat == SurfaceMaterial::EchoCrystal) {
+                    const bool facetEdge = (((x + y) % 14) < 2) || (((64 - x + y) % 14) < 2);
+                    const float prismWave = std::sin(static_cast<float>(x) * 0.35f) * std::cos(static_cast<float>(y) * 0.35f);
+                    r += static_cast<int>(prismWave * 28.0f) + (facetEdge ? 58 : 14);
+                    g += static_cast<int>(prismWave * 16.0f) + (facetEdge ? 32 : 4);
+                    b += static_cast<int>(prismWave * 36.0f) + (facetEdge ? 68 : 22);
                 } else if (mat == SurfaceMaterial::Glass) {
                     if (((x + y * 2) % 21) < 2 || ((64 - x + y) % 29) == 0) {
                         r += 55; g += 60; b += 65;

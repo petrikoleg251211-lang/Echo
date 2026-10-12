@@ -56,284 +56,12 @@ const char* EnemyAI::stateName(EnemyState s) noexcept {
     return "PATROLLING";
 }
 
-const char* EnemyAI::variantName(EnemyVariant v) noexcept {
-    switch (v) {
-        case EnemyVariant::Stalker:       return "STALKER";
-        case EnemyVariant::Warden:        return "HEAVY WARDEN";
-        case EnemyVariant::Shrieker:      return "SONIC SHRIEKER";
-        case EnemyVariant::Phantom:       return "PHASE PHANTOM";
-        case EnemyVariant::AbyssalBoss:   return "THE CHOIR SOVEREIGN";
-        case EnemyVariant::SilentStalker: return "SILENT HUNTER";
-        case EnemyVariant::DeafBrute:     return "DEAF BRUTE";
-        case EnemyVariant::Mimic:         return "RESONANCE MIMIC";
-        case EnemyVariant::EchoSwarm:     return "ECHO SWARM";
-    }
-    return "HUNTER";
-}
-
-float EnemyAI::hitRadius() const noexcept {
-    switch (m_variant) {
-        case EnemyVariant::AbyssalBoss: return cfg::kEnemyRadius + 10.0f;
-        case EnemyVariant::DeafBrute:   return cfg::kEnemyRadius + 5.5f;
-        case EnemyVariant::Warden:      return cfg::kEnemyRadius + 4.0f;
-        case EnemyVariant::EchoSwarm:   return cfg::kEnemyRadius + 2.0f;
-        default:                        return cfg::kEnemyRadius;
-    }
-}
-
-int EnemyAI::bossPhase() const noexcept {
-    if (m_variant != EnemyVariant::AbyssalBoss || m_maxHp <= 0.0f) return 1;
-    const float ratio = m_hp / m_maxHp;
-    if (ratio <= 0.33f) return 3;
-    if (ratio <= 0.66f) return 2;
-    return 1;
-}
-
-BossArenaAcousticPhase EnemyAI::bossAcousticPhase() const noexcept {
-    switch (bossPhase()) {
-        case 3:  return BossArenaAcousticPhase::AbyssalSilence;
-        case 2:  return BossArenaAcousticPhase::DissonantPulse;
-        case 1:
-        default: return BossArenaAcousticPhase::HarmonicChoir;
-    }
-}
-
-void EnemyAI::configurePatrol(const std::vector<sf::Vector2f>& waypoints, EnemyVariant variant) {
-    m_waypoints = waypoints;
-    m_variant = variant;
-    m_waypointIdx = 0;
-    m_suspicion = 0.0f;
-    m_stateTimer = 0.0f;
-    m_tremorTimer = 0.0f;
-    m_rangedAttackTimer = 1.6f;
-    m_hitFlashTimer = 0.0f;
-    m_staggerTimer = 0.0f;
-    m_alertBlend = 0.0f;
-    m_disguised = (variant == EnemyVariant::Mimic);
-    m_inhaleWarningEmitted = false;
-    m_triggeredSwarmAmplification = false;
-    m_swarmAmplifyCooldown = 0.0f;
-
-    for (auto& b : m_bolts) b.active = false;
-
-    switch (variant) {
-        case EnemyVariant::Stalker:       m_maxHp = 42.0f; break;
-        case EnemyVariant::Warden:        m_maxHp = 95.0f; break;
-        case EnemyVariant::Shrieker:      m_maxHp = 38.0f; break;
-        case EnemyVariant::Phantom:       m_maxHp = 52.0f; break;
-        case EnemyVariant::AbyssalBoss:   m_maxHp = 240.0f; break;
-        case EnemyVariant::SilentStalker: m_maxHp = 40.0f; break;
-        case EnemyVariant::DeafBrute:     m_maxHp = 155.0f; break;
-        case EnemyVariant::Mimic:         m_maxHp = 58.0f; break;
-        case EnemyVariant::EchoSwarm:     m_maxHp = 28.0f; break;
-    }
-    m_hp = m_maxHp;
-
-    if (m_waypoints.empty()) {
-        m_active = false;
-        m_state = EnemyState::Idle;
-    } else {
-        m_active = true;
-        m_position = m_waypoints.front();
-        m_targetPos = m_waypoints.front();
-        m_state = (variant == EnemyVariant::Mimic) ? EnemyState::Idle : EnemyState::Patrol;
-    }
-}
-
-void EnemyAI::applyNoiseTierStimulus(
-    sf::Vector2f stimulusPos,
-    NoiseTier tier,
-    bool isGroundVibration
-) noexcept {
-    if (!m_active) return;
-
-    // Block 4.2: DeafBrute does not hear airborne sounds — only reacts to ground vibrations!
-    if (m_variant == EnemyVariant::DeafBrute && !isGroundVibration) {
-        return;
-    }
-
-    // Block 4.3: Disguised Mimic stays motionless in disguise until player approaches or scans/damages it
-    if (m_variant == EnemyVariant::Mimic && m_disguised) {
-        return;
-    }
-
-    switch (tier) {
-        case NoiseTier::Quiet:
-            // [0.0, 30.0]: Quiet — enemies remain in their current patrol routine
-            break;
-
-        case NoiseTier::Audible:
-            // (30.0, 60.0): Audible — transition from Patrol/ReturnToPatrol to InvestigateSound
-            m_targetPos = stimulusPos;
-            m_suspicion = std::max(m_suspicion, 42.0f);
-            if (m_state == EnemyState::Patrol || m_state == EnemyState::ReturnToPatrol || m_state == EnemyState::Idle) {
-                m_state = EnemyState::InvestigateSound;
-                m_stateTimer = 4.2f;
-            }
-            break;
-
-        case NoiseTier::Loud:
-            // [60.0, 85.0): Loud — enemies move directly toward the sound origin with high suspicion
-            m_targetPos = stimulusPos;
-            m_suspicion = std::max(m_suspicion, 72.0f);
-            if (m_state != EnemyState::Attack && m_state != EnemyState::PursuePlayer) {
-                m_state = EnemyState::InvestigateSound;
-                m_stateTimer = 5.0f;
-            }
-            break;
-
-        case NoiseTier::Scream:
-            // [85.0, 100.0]: Scream — priority hunt lock on the player position
-            m_targetPos = stimulusPos;
-            m_suspicion = 100.0f;
-            if (m_state != EnemyState::Attack) {
-                m_state = EnemyState::PursuePlayer;
-                m_stateTimer = 6.0f;
-            }
-            break;
-    }
-}
-
-bool EnemyAI::consumeSwarmAmplification() noexcept {
-    const bool triggered = m_triggeredSwarmAmplification;
-    m_triggeredSwarmAmplification = false;
-    return triggered;
-}
-
 void EnemyAI::clearContactState() noexcept {
     if (m_state == EnemyState::Attack) {
         m_state = EnemyState::PursuePlayer;
         m_stateTimer = 3.5f;
+        m_meleeTelegraphProgress = 0.0f;
     }
-}
-
-void EnemyAI::spawnSonicBolt(sf::Vector2f dir, float speed) noexcept {
-    const float lenSq = dir.x * dir.x + dir.y * dir.y;
-    if (lenSq < 1e-6f) return;
-    dir /= std::sqrt(lenSq);
-
-    for (auto& b : m_bolts) {
-        if (!b.active) {
-            b.pos = m_position + dir * (hitRadius() + 6.0f);
-            b.vel = dir * speed;
-            b.radius = (m_variant == EnemyVariant::AbyssalBoss) ? 7.5f : 5.8f;
-            b.lifetime = 3.2f;
-            b.active = true;
-            return;
-        }
-    }
-}
-
-bool EnemyAI::consumeBoltHitOnPlayer(sf::Vector2f playerPos, float playerRadius) noexcept {
-    if (!m_active) return false;
-    for (auto& b : m_bolts) {
-        if (!b.active) continue;
-        const float d = distanceBetween(b.pos, playerPos);
-        if (d <= b.radius + playerRadius) {
-            b.active = false;
-            return true;
-        }
-    }
-    return false;
-}
-
-bool EnemyAI::applyStompKnockback(
-    sf::Vector2f stompOrigin,
-    float stompRadius,
-    float knockbackDist,
-    const std::vector<WallSegment>& walls
-) noexcept {
-    if (!m_active) return false;
-    const sf::Vector2f delta = m_position - stompOrigin;
-    const float dist = std::sqrt(delta.x * delta.x + delta.y * delta.y);
-    if (dist > stompRadius + hitRadius()) {
-        return false;
-    }
-
-    const sf::Vector2f pushDir = (dist > 1e-3f) ? (delta / dist) : sf::Vector2f{1.0f, 0.0f};
-    const float falloff = std::clamp(1.0f - (dist / std::max(1.0f, stompRadius * 1.25f)), 0.35f, 1.0f);
-    const float scale = (m_variant == EnemyVariant::AbyssalBoss) ? 0.45f : 1.0f;
-
-    m_position += pushDir * (knockbackDist * falloff * scale);
-    resolveWallCollisions(walls);
-
-    m_staggerTimer = std::max(m_staggerTimer, 0.48f);
-    m_hitFlashTimer = 0.25f;
-    m_disguised = false; // Unmasks Mimic if stomped nearby
-
-    // Stomp is a powerful ground vibration — wakes up DeafBrute as well!
-    m_targetPos = stompOrigin;
-    m_suspicion = std::min(100.0f, m_suspicion + 55.0f);
-    if (m_state != EnemyState::Attack) {
-        m_state = EnemyState::PursuePlayer;
-        m_stateTimer = 4.8f;
-    }
-    return true;
-}
-
-bool EnemyAI::applyAcousticDamage(
-    float amount,
-    bool isReflectedHit,
-    sf::Vector2f sourcePos,
-    const std::vector<WallSegment>& walls,
-    bool isHighFreqHit
-) noexcept {
-    if (!m_active || amount <= 0.0f) return false;
-
-    float finalDmg = amount;
-    // Stealth Ambush Bonus: hitting an unalerted enemy deals 1.45x resonance damage
-    if (m_state == EnemyState::Patrol || m_state == EnemyState::Idle) {
-        finalDmg *= 1.45f;
-    }
-    // Phantom takes reduced damage from direct pings, but bonus damage from reflected wall echoes
-    if (m_variant == EnemyVariant::Phantom) {
-        finalDmg *= isReflectedHit ? 1.50f : 0.65f;
-    } else if ((m_variant == EnemyVariant::Warden || m_variant == EnemyVariant::DeafBrute) && !isReflectedHit) {
-        // Armored Warden & DeafBrute have thick plating; bounced shots bypass armor
-        finalDmg *= 0.80f;
-    } else if (m_variant == EnemyVariant::EchoSwarm && isHighFreqHit) {
-        // Block 4.4 & 3.4: High-frequency ultrasonic waves disrupt EchoSwarm for 2x damage
-        finalDmg *= 2.0f;
-    } else if (m_variant == EnemyVariant::AbyssalBoss && bossAcousticPhase() == BossArenaAcousticPhase::AbyssalSilence) {
-        // Block 5.4: Phase III Abyssal Silence — reflected wall echoes or High-freq [3] waves deal 1.85x resonance damage!
-        finalDmg *= (isReflectedHit || isHighFreqHit) ? 1.85f : 0.65f;
-    }
-
-    // Block 4.3: Hitting a Mimic immediately shatters its crystal disguise!
-    if (m_variant == EnemyVariant::Mimic && m_disguised) {
-        m_disguised = false;
-        m_state = EnemyState::PursuePlayer;
-        m_stateTimer = 5.5f;
-        m_suspicion = 100.0f;
-    }
-
-    m_hp = std::max(0.0f, m_hp - finalDmg);
-    m_hitFlashTimer = 0.24f;
-    m_staggerTimer = (m_variant == EnemyVariant::AbyssalBoss || m_variant == EnemyVariant::DeafBrute) ? 0.06f : 0.16f;
-
-    // Knockback away from sound pulse origin
-    const sf::Vector2f away = m_position - sourcePos;
-    const float dist = std::sqrt(away.x * away.x + away.y * away.y);
-    if (dist > 1e-3f) {
-        const float kb = (m_variant == EnemyVariant::AbyssalBoss || m_variant == EnemyVariant::DeafBrute) ? 3.5f : 9.0f;
-        m_position += (away / dist) * kb;
-        resolveWallCollisions(walls);
-    }
-
-    // Alert enemy toward the source of the sonar disruption
-    m_targetPos = sourcePos;
-    m_suspicion = std::min(100.0f, m_suspicion + 35.0f);
-    if (m_state != EnemyState::PursuePlayer && m_state != EnemyState::Attack) {
-        m_state = (m_suspicion >= 70.0f) ? EnemyState::PursuePlayer : EnemyState::InvestigateSound;
-        m_stateTimer = 4.5f;
-    }
-
-    if (m_hp <= 0.0f) {
-        m_active = false;
-        for (auto& b : m_bolts) b.active = false;
-        return true;
-    }
-    return false;
 }
 
 bool EnemyAI::hasLineOfSight(sf::Vector2f target, const std::vector<WallSegment>& walls) const noexcept {
@@ -401,41 +129,18 @@ bool EnemyAI::update(
     m_staggerTimer = std::max(0.0f, m_staggerTimer - dt);
     m_swarmAmplifyCooldown = std::max(0.0f, m_swarmAmplifyCooldown - dt);
 
-    // Update active ranged SonicBolts
-    for (auto& b : m_bolts) {
-        if (!b.active) continue;
-        const sf::Vector2f nextPos = b.pos + b.vel * dt;
-        b.lifetime -= dt;
-        if (b.lifetime <= 0.0f) {
-            b.active = false;
-            continue;
-        }
-        bool hitWall = false;
-        for (const auto& w : walls) {
-            if (w.isOpen) continue;
-            if (segmentsIntersectSimple(b.pos, nextPos, w.a, w.b)) {
-                hitWall = true;
-                break;
-            }
-        }
-        if (hitWall) {
-            b.active = false;
-        } else {
-            b.pos = nextPos;
-        }
-    }
+    const auto varIdx = std::min<std::size_t>(
+        static_cast<std::size_t>(m_variant),
+        cfg::balance::kDefaultBalance.enemies.size() - 1
+    );
+    const auto& bal = cfg::balance::kDefaultBalance.enemies[varIdx];
+    float speedScale = bal.speedScale * m_difficultySpeedMult;
 
-    float speedScale = 1.0f;
-    if (m_variant == EnemyVariant::Warden) speedScale = 0.88f;
-    else if (m_variant == EnemyVariant::DeafBrute) speedScale = 0.76f;
-    else if (m_variant == EnemyVariant::Shrieker) speedScale = 0.65f;
-    else if (m_variant == EnemyVariant::Phantom) speedScale = 1.15f;
-    else if (m_variant == EnemyVariant::SilentStalker) speedScale = 1.12f;
-    else if (m_variant == EnemyVariant::Mimic) speedScale = m_disguised ? 0.0f : 1.24f;
-    else if (m_variant == EnemyVariant::EchoSwarm) speedScale = 1.22f;
-    else if (m_variant == EnemyVariant::AbyssalBoss) {
+    if (m_variant == EnemyVariant::Mimic && m_disguised) {
+        speedScale = 0.0f;
+    } else if (m_variant == EnemyVariant::AbyssalBoss) {
         const int phase = bossPhase();
-        speedScale = (phase == 3) ? 1.25f : (phase == 2 ? 1.05f : 0.88f);
+        speedScale = ((phase == 3) ? 1.25f : (phase == 2 ? 1.05f : 0.88f)) * m_difficultySpeedMult;
     }
 
     if (m_staggerTimer > 0.0f) {
@@ -453,6 +158,7 @@ bool EnemyAI::update(
     const EnemyState prevState = m_state;
 
     const float catchRadius = cfg::kPlayerRadius + hitRadius() - 1.5f;
+    const float telegraphRadius = catchRadius + cfg::feel::kMeleeTelegraphRangeMargin;
     const float distToPlayer = distanceBetween(m_position, playerPos);
 
     // Block 4.3: Mimic unmasks and ambushes if player walks too close (< 78 px)
@@ -484,19 +190,74 @@ bool EnemyAI::update(
         }
     }
 
-    if (distToPlayer <= catchRadius) {
-        m_disguised = false;
-        m_state = EnemyState::Attack;
-        return true;
+    // Stage 2: Leech (Acoustic Parasite) latches onto the player on close approach, draining stamina & pulsing +8 noise
+    if (m_variant == EnemyVariant::Leech && m_staggerTimer <= 0.0f) {
+        if (m_leechedOnPlayer) {
+            const float orbitAng = m_animPhase * 3.2f;
+            m_position = playerPos + sf::Vector2f{std::cos(orbitAng), std::sin(orbitAng)} * 14.0f;
+            m_leechDrainTimer += dt;
+            if (m_leechDrainTimer >= 1.35f) {
+                m_leechDrainTimer = 0.0f;
+                m_triggeredLeechDrain = true;
+                acoustics.emitPulse(
+                    m_position,
+                    340.0f,
+                    280.0f,
+                    0.82f,
+                    32,
+                    WaveSignature::ResonatorHum,
+                    0.0f,
+                    6.2831853f,
+                    false
+                );
+            }
+            return false;
+        } else if (distToPlayer <= catchRadius + 10.0f) {
+            m_leechedOnPlayer = true;
+            m_leechDrainTimer = 1.15f;
+            m_state = EnemyState::PursuePlayer;
+            m_position = playerPos + sf::Vector2f{12.0f, 0.0f};
+            return true;
+        }
     }
 
-    // Snapshot recent events size so any new pulses emitted by EchoSwarm don't invalidate iteration
+    // Stage 1.1: Melee Attack Telegraphing (0.45s windup with acoustic + audio + visual cue)
+    if (!m_disguised && m_variant != EnemyVariant::Leech && distToPlayer <= telegraphRadius) {
+        if (m_meleeTelegraphProgress <= 0.001f) {
+            m_telegraphCuePending = true;
+            acoustics.emitPulse(
+                m_position,
+                370.0f,
+                150.0f,
+                0.82f,
+                24,
+                WaveSignature::EnemyTremor,
+                0.0f,
+                6.2831853f,
+                false
+            );
+        }
+        m_meleeTelegraphProgress = std::min(
+            1.0f,
+            m_meleeTelegraphProgress + dt / std::max(0.15f, cfg::feel::kEnemyMeleeTelegraphSec)
+        );
+        // Slow lunge movement slightly while winding up strike so player can react
+        speedScale *= 0.58f;
+
+        if (distToPlayer <= catchRadius && m_meleeTelegraphProgress >= 1.0f) {
+            m_disguised = false;
+            m_state = EnemyState::Attack;
+            return true;
+        }
+    } else {
+        m_meleeTelegraphProgress = std::max(0.0f, m_meleeTelegraphProgress - dt * 2.5f);
+    }
+
     const std::size_t eventCount = acoustics.recentEvents().size();
     for (std::size_t idx = 0; idx < eventCount; ++idx) {
         const AcousticEvent ev = acoustics.recentEvents()[idx];
         if (!ev.emittedByPlayer) continue;
 
-        // Block 4.2: DeafBrute ignores all airborne sounds; only reacts to ground vibrations!
         if (m_variant == EnemyVariant::DeafBrute && !ev.isGroundVibration) {
             continue;
         }
@@ -504,7 +265,6 @@ bool EnemyAI::update(
         const float dist = distanceBetween(m_position, ev.origin);
         if (dist > ev.radius * 1.15f) continue;
 
-        // Block 4.3: Disguised Mimic unmasks if scanned by Whistle or High-frequency sonar
         if (m_variant == EnemyVariant::Mimic && m_disguised) {
             if (ev.signature == WaveSignature::WhistleBeam ||
                 ev.frequency == AcousticFrequency::High ||
@@ -519,14 +279,16 @@ bool EnemyAI::update(
         }
 
         const float transmissionFactor = AcousticSystem::computeTransmissionFactor(ev.origin, m_position, walls, ev.frequency);
-        const float sensitivity = (m_variant == EnemyVariant::Shrieker || m_variant == EnemyVariant::EchoSwarm) ? 1.25f : 1.0f;
+        const float sensitivity = (m_variant == EnemyVariant::Shrieker ||
+                                   m_variant == EnemyVariant::EchoSwarm ||
+                                   m_variant == EnemyVariant::Banshee ||
+                                   m_variant == EnemyVariant::Leech) ? 1.25f : 1.0f;
         const float perceived = ev.loudness * sensitivity * transmissionFactor * (1.0f - dist / (ev.radius * 1.25f));
 
         if (perceived > 0.14f) {
             m_targetPos = ev.origin;
             m_suspicion = std::min(100.0f, m_suspicion + perceived * 54.0f);
 
-            // Block 4.4: EchoSwarm repeats and amplifies any player sound nearby (+12 noise & relay pulse)
             if (m_variant == EnemyVariant::EchoSwarm && m_swarmAmplifyCooldown <= 0.0f) {
                 m_swarmAmplifyCooldown = 1.15f;
                 m_triggeredSwarmAmplification = true;
@@ -555,6 +317,27 @@ bool EnemyAI::update(
 
     m_suspicion = std::max(0.0f, m_suspicion - 6.5f * dt);
 
+    // Stage 2: Banshee & Phase-2 Conductor periodic sonic wail (+22 noise & chamber-wide wave)
+    if ((m_variant == EnemyVariant::Banshee || (m_variant == EnemyVariant::TheConductor && m_hp <= m_maxHp * 0.55f)) &&
+        (m_state == EnemyState::InvestigateSound || m_state == EnemyState::SearchLastKnown || m_state == EnemyState::PursuePlayer)) {
+        m_bansheeWailCooldown -= dt;
+        if (m_bansheeWailCooldown <= 0.0f) {
+            m_bansheeWailCooldown = (m_variant == EnemyVariant::TheConductor) ? 4.4f : 3.6f;
+            m_triggeredBansheeWail = true;
+            acoustics.emitPulse(
+                m_position,
+                430.0f,
+                520.0f,
+                1.00f,
+                56,
+                WaveSignature::ResonatorHum,
+                0.0f,
+                6.2831853f,
+                false
+            );
+        }
+    }
+
     switch (m_state) {
         case EnemyState::Idle:
             break;
@@ -562,7 +345,7 @@ bool EnemyAI::update(
         case EnemyState::Patrol: {
             if (!m_waypoints.empty() && !m_disguised) {
                 const sf::Vector2f wp = m_waypoints[m_waypointIdx];
-                steerToward(wp, 78.0f * speedScale, dt, walls);
+                steerToward(wp, bal.patrolSpeed * speedScale, dt, walls);
                 if (distanceBetween(m_position, wp) < 18.0f) {
                     m_waypointIdx = (m_waypointIdx + 1) % m_waypoints.size();
                 }
@@ -571,7 +354,7 @@ bool EnemyAI::update(
         }
 
         case EnemyState::InvestigateSound: {
-            steerToward(m_targetPos, 128.0f * speedScale, dt, walls);
+            steerToward(m_targetPos, bal.investigateSpeed * speedScale, dt, walls);
             m_stateTimer -= dt;
             if (distanceBetween(m_position, m_targetPos) < 20.0f || m_stateTimer <= 0.0f) {
                 m_state = EnemyState::SearchLastKnown;
@@ -594,7 +377,10 @@ bool EnemyAI::update(
         }
 
         case EnemyState::PursuePlayer: {
-            steerToward(m_targetPos, 178.0f * speedScale, dt, walls);
+            if (distToPlayer <= telegraphRadius * 1.35f) {
+                m_targetPos = playerPos;
+            }
+            steerToward(m_targetPos, bal.pursueSpeed * speedScale, dt, walls);
             m_stateTimer -= dt;
             if (distanceBetween(m_position, m_targetPos) < 20.0f && distToPlayer > 44.0f) {
                 m_state = EnemyState::SearchLastKnown;
@@ -623,42 +409,11 @@ bool EnemyAI::update(
             break;
     }
 
-    // Ranged SonicBolt attacks for Shrieker and AbyssalBoss when alerted
-    if ((m_variant == EnemyVariant::Shrieker || m_variant == EnemyVariant::AbyssalBoss) &&
-        (m_state == EnemyState::InvestigateSound || m_state == EnemyState::PursuePlayer || m_state == EnemyState::SearchLastKnown)) {
-        m_rangedAttackTimer -= dt;
-        if (m_rangedAttackTimer <= 0.0f) {
-            const sf::Vector2f toTarget = m_targetPos - m_position;
-            const float baseAng = std::atan2(toTarget.y, toTarget.x);
+    // Update ranged projectiles & Boss/Shrieker/TuningFork/Conductor volleys (implemented in BossAI.cpp)
+    updateBossAndRangedVolleys(dt, walls, acoustics);
 
-            if (m_variant == EnemyVariant::Shrieker) {
-                m_rangedAttackTimer = 2.1f;
-                spawnSonicBolt({std::cos(baseAng), std::sin(baseAng)}, 250.0f);
-            } else {
-                // AbyssalBoss multi-phase sonic patterns
-                const int phase = bossPhase();
-                m_rangedAttackTimer = (phase == 3) ? 1.35f : (phase == 2 ? 1.75f : 2.15f);
-                if (phase == 1) {
-                    for (int k = -1; k <= 1; ++k) {
-                        const float a = baseAng + static_cast<float>(k) * 0.26f;
-                        spawnSonicBolt({std::cos(a), std::sin(a)}, 265.0f);
-                    }
-                } else {
-                    const int count = (phase == 3) ? 8 : 6;
-                    for (int k = 0; k < count; ++k) {
-                        const float a = baseAng + static_cast<float>(k) * (6.2831853f / static_cast<float>(count));
-                        spawnSonicBolt({std::cos(a), std::sin(a)}, 245.0f);
-                    }
-                }
-            }
-        }
-    }
-
-    // Periodic acoustic emissions:
-    // - Block 4.1: SilentStalker NEVER emits passive movement tremors!
-    // - Block 4.3: Disguised Mimic emits false alluring ResonatorHum waves to lure the player!
     if (m_variant == EnemyVariant::SilentStalker) {
-        // Silent Hunter remains completely silent while moving (only inhales 0.5s before melee attack above)
+        // SilentStalker emits zero passive movement tremors
     } else if (m_variant == EnemyVariant::Mimic && m_disguised) {
         m_tremorTimer += dt;
         if (m_tremorTimer >= 1.55f) {
@@ -680,9 +435,9 @@ bool EnemyAI::update(
         const float tremorInterval = (m_state == EnemyState::PursuePlayer) ? 0.42f : 0.85f;
         if (m_tremorTimer >= tremorInterval) {
             m_tremorTimer = 0.0f;
-            const float tremorRadius = (m_variant == EnemyVariant::AbyssalBoss)
+            const float tremorRadius = (m_variant == EnemyVariant::AbyssalBoss || m_variant == EnemyVariant::TheConductor)
                 ? 310.0f
-                : ((m_variant == EnemyVariant::Warden || m_variant == EnemyVariant::DeafBrute) ? 245.0f : 190.0f);
+                : ((m_variant == EnemyVariant::Warden || m_variant == EnemyVariant::DeafBrute || m_variant == EnemyVariant::TuningForkConstruct) ? 245.0f : 190.0f);
             acoustics.emitPulse(
                 m_position,
                 255.0f,
@@ -711,7 +466,6 @@ void EnemyAI::render(
 ) const {
     if (!m_active) return;
 
-    // 1. Render active ranged SonicBolts
     for (const auto& b : m_bolts) {
         if (!b.active) continue;
         sf::CircleShape halo(b.radius + 4.0f);
@@ -729,7 +483,6 @@ void EnemyAI::render(
         target.draw(core);
     }
 
-    // Block 4.3: Render Disguised Mimic as a deceptive Resonator Crystal (with distorted outline under sonar scan!)
     if (m_variant == EnemyVariant::Mimic && m_disguised) {
         const float vis = std::clamp(std::max(0.38f, echoIllumination), 0.20f, 1.0f);
         const auto alpha = static_cast<sf::Uint8>(vis * 245.0f);
@@ -766,18 +519,18 @@ void EnemyAI::render(
         return;
     }
 
-    float baseVis = (m_state == EnemyState::PursuePlayer)
-        ? 0.94f
+    const float telegraphProg = attackTelegraphProgress();
+    float baseVis = (m_state == EnemyState::PursuePlayer || telegraphProg > 0.05f || m_leechedOnPlayer)
+        ? 0.96f
         : (m_state == EnemyState::InvestigateSound || m_state == EnemyState::SearchLastKnown ? 0.75f : 0.36f);
 
-    if (m_variant == EnemyVariant::Phantom && m_hitFlashTimer <= 0.0f) {
+    if (m_variant == EnemyVariant::Phantom && m_hitFlashTimer <= 0.0f && telegraphProg <= 0.05f) {
         baseVis *= 0.42f;
-    } else if (m_variant == EnemyVariant::SilentStalker && m_hitFlashTimer <= 0.0f && !m_inhaleWarningEmitted) {
-        // Block 4.1: SilentStalker is invisible passively — can ONLY be seen when hit by player's sonar rays!
+    } else if (m_variant == EnemyVariant::SilentStalker && m_hitFlashTimer <= 0.0f && !m_inhaleWarningEmitted && telegraphProg <= 0.05f) {
         baseVis = 0.02f;
     }
 
-    const float minVisFloor = (m_variant == EnemyVariant::SilentStalker && m_hitFlashTimer <= 0.0f && !m_inhaleWarningEmitted)
+    const float minVisFloor = (m_variant == EnemyVariant::SilentStalker && m_hitFlashTimer <= 0.0f && !m_inhaleWarningEmitted && telegraphProg <= 0.05f)
         ? 0.02f
         : 0.12f;
     const float vis = std::clamp(std::max(baseVis, echoIllumination), minVisFloor, 1.0f);
@@ -787,7 +540,24 @@ void EnemyAI::render(
     const auto alpha = static_cast<sf::Uint8>(vis * 245.0f);
     const float radius = hitRadius();
 
-    // Block 4.4: Render EchoSwarm as an orbiting cluster of 5 acoustic parasites
+    // Stage 1.1: Visual Attack Telegraph Ring (converging crimson/amber warning circle + aim line)
+    if (telegraphProg > 0.02f) {
+        const float outerR = radius + 6.0f + (1.0f - telegraphProg) * 28.0f;
+        sf::CircleShape warnRing(outerR);
+        warnRing.setOrigin(outerR, outerR);
+        warnRing.setPosition(m_position);
+        warnRing.setFillColor(sf::Color(244, 63, 94, static_cast<sf::Uint8>(40.0f + telegraphProg * 75.0f)));
+        warnRing.setOutlineThickness(2.2f);
+        warnRing.setOutlineColor(sf::Color(250, 204, 21, static_cast<sf::Uint8>(140.0f + telegraphProg * 115.0f)));
+        target.draw(warnRing);
+
+        sf::VertexArray strikeLine(sf::Lines, 2);
+        const sf::Vector2f aimDir{std::cos(m_facingAngle), std::sin(m_facingAngle)};
+        strikeLine[0] = sf::Vertex(m_position, sf::Color(250, 204, 21, 220));
+        strikeLine[1] = sf::Vertex(m_position + aimDir * (radius + 26.0f), sf::Color(244, 63, 94, 240));
+        target.draw(strikeLine);
+    }
+
     if (m_variant == EnemyVariant::EchoSwarm) {
         for (int i = 0; i < 5; ++i) {
             const float ang = m_animPhase * 1.8f + static_cast<float>(i) * 1.256637f;
@@ -801,9 +571,21 @@ void EnemyAI::render(
             node.setOutlineColor(sf::Color(250, 204, 21, alpha));
             target.draw(node);
         }
+    } else if (m_variant == EnemyVariant::TuningForkConstruct || m_variant == EnemyVariant::TheConductor) {
+        // Render resonant tuning-fork prongs / conductor baton arcs
+        const sf::Vector2f fwd{std::cos(m_facingAngle), std::sin(m_facingAngle)};
+        const sf::Vector2f side{-fwd.y, fwd.x};
+        sf::VertexArray prongs(sf::Lines, 4);
+        const sf::Color prongCol = (m_variant == EnemyVariant::TheConductor)
+            ? sf::Color(244, 114, 182, alpha)
+            : sf::Color(165, 243, 252, alpha);
+        prongs[0] = sf::Vertex(m_position + side * 7.0f, prongCol);
+        prongs[1] = sf::Vertex(m_position + side * 9.0f + fwd * (radius + 12.0f), prongCol);
+        prongs[2] = sf::Vertex(m_position - side * 7.0f, prongCol);
+        prongs[3] = sf::Vertex(m_position - side * 9.0f + fwd * (radius + 12.0f), prongCol);
+        target.draw(prongs);
     }
 
-    // 2. Outer acoustic resonance membrane
     const float pulseR = radius + 6.0f + std::sin(m_animPhase) * (2.5f + m_alertBlend * 2.5f);
     sf::CircleShape outerRing(pulseR);
     outerRing.setOrigin(pulseR, pulseR);
@@ -817,7 +599,6 @@ void EnemyAI::render(
     );
     target.draw(outerRing);
 
-    // 3. Articulated 6-limb stride animation
     const sf::Vector2f forward{std::cos(m_facingAngle), std::sin(m_facingAngle)};
     const sf::Vector2f right{-forward.y, forward.x};
     sf::VertexArray legs(sf::Lines);
@@ -850,7 +631,6 @@ void EnemyAI::render(
     }
     target.draw(legs);
 
-    // 4. Render 2.5D 3D Mesh via AssetManager
     sf::Color baseCol(52, 12, 22, alpha);
     sf::Color rimCol(248, 113, 113, alpha);
 
@@ -872,6 +652,18 @@ void EnemyAI::render(
     } else if (m_variant == EnemyVariant::EchoSwarm) {
         baseCol = sf::Color(58, 18, 64, alpha);
         rimCol = sf::Color(240, 171, 252, alpha);
+    } else if (m_variant == EnemyVariant::Leech) {
+        baseCol = sf::Color(16, 58, 44, alpha);
+        rimCol = sf::Color(52, 211, 153, alpha);
+    } else if (m_variant == EnemyVariant::Banshee) {
+        baseCol = sf::Color(64, 14, 58, alpha);
+        rimCol = sf::Color(244, 114, 182, alpha);
+    } else if (m_variant == EnemyVariant::TuningForkConstruct) {
+        baseCol = sf::Color(30, 58, 82, alpha);
+        rimCol = sf::Color(165, 243, 252, alpha);
+    } else if (m_variant == EnemyVariant::TheConductor) {
+        baseCol = sf::Color(86, 20, 68, alpha);
+        rimCol = sf::Color(232, 121, 249, alpha);
     } else if (m_variant == EnemyVariant::AbyssalBoss) {
         baseCol = sf::Color(88, 12, 36, alpha);
         rimCol = (bossPhase() == 3) ? sf::Color(250, 204, 21, alpha) : sf::Color(244, 63, 94, alpha);
@@ -885,12 +677,15 @@ void EnemyAI::render(
     if (assets != nullptr && assets->isInitialized()) {
         ModelId modelId = ModelId::ListenerStalker;
         float meshScale = 16.0f;
-        if (m_variant == EnemyVariant::Warden || m_variant == EnemyVariant::DeafBrute) {
+        if (m_variant == EnemyVariant::Warden || m_variant == EnemyVariant::DeafBrute || m_variant == EnemyVariant::TuningForkConstruct) {
             modelId = ModelId::ListenerWarden;
             meshScale = (m_variant == EnemyVariant::DeafBrute) ? 21.5f : 19.5f;
-        } else if (m_variant == EnemyVariant::Shrieker || m_variant == EnemyVariant::Mimic) {
+        } else if (m_variant == EnemyVariant::Shrieker || m_variant == EnemyVariant::Mimic || m_variant == EnemyVariant::Banshee) {
             modelId = ModelId::ResonatorCrystal;
             meshScale = 17.5f;
+        } else if (m_variant == EnemyVariant::TheConductor) {
+            modelId = ModelId::ListenerWarden;
+            meshScale = 23.5f;
         } else if (m_variant == EnemyVariant::AbyssalBoss) {
             modelId = ModelId::ListenerWarden;
             meshScale = 27.0f;
@@ -918,9 +713,8 @@ void EnemyAI::render(
         target.draw(core);
     }
 
-    // 5. Render compact harmonic stability bar above damaged or Boss enemies
-    if (m_hp < m_maxHp || m_variant == EnemyVariant::AbyssalBoss) {
-        const float barW = (m_variant == EnemyVariant::AbyssalBoss) ? 58.0f : 32.0f;
+    if (m_hp < m_maxHp || m_variant == EnemyVariant::AbyssalBoss || m_variant == EnemyVariant::TheConductor) {
+        const float barW = (m_variant == EnemyVariant::AbyssalBoss || m_variant == EnemyVariant::TheConductor) ? 58.0f : 32.0f;
         const float barH = 4.0f;
         const sf::Vector2f barPos{m_position.x - barW * 0.5f, m_position.y - radius - 16.0f};
 

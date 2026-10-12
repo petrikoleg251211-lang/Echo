@@ -39,13 +39,21 @@ std::uint32_t SaveSystem::computeChecksumV4(const SaveData& data) noexcept {
     return h;
 }
 
-std::uint32_t SaveSystem::computeChecksum(const SaveData& data) noexcept {
+std::uint32_t SaveSystem::computeChecksumV5(const SaveData& data) noexcept {
     std::uint32_t h = computeChecksumV4(data);
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.echoTrapCount, 0, 99)));
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.activeFrequency, 0, 2)));
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.ghostClearsThisRun, 0, 999)));
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.metaTotalGhostClears, 0, 99999)));
     for (int id : data.discoveredCodexIds) hashMix(h, static_cast<std::uint32_t>(id));
+    return h;
+}
+
+std::uint32_t SaveSystem::computeChecksum(const SaveData& data) noexcept {
+    std::uint32_t h = computeChecksumV5(data);
+    hashMix(h, static_cast<std::uint32_t>(std::clamp(data.difficulty, 0, 3)));
+    hashMix(h, data.tutorialDone ? 1u : 0u);
+    hashMix(h, static_cast<std::uint32_t>(std::clamp(data.playerMaxHealth, 1, 20)));
     return h;
 }
 
@@ -72,7 +80,8 @@ bool SaveSystem::saveToFile(const std::string& filePath, const SaveData& rawData
     data.checkpointRoomId = std::clamp(data.checkpointRoomId, 0, 59);
     data.playerPosX = sanitizeFloat(data.playerPosX, 55.0f, 1225.0f, 640.0f);
     data.playerPosY = sanitizeFloat(data.playerPosY, 55.0f, 745.0f, 400.0f);
-    data.playerMaxHealth = std::clamp(data.playerMaxHealth, 2, 20);
+    data.difficulty = std::clamp(data.difficulty, 0, 3);
+    data.playerMaxHealth = std::clamp(data.playerMaxHealth, 1, 20);
     data.playerHealth = std::clamp(data.playerHealth, 1, data.playerMaxHealth);
     data.playerStamina = sanitizeFloat(data.playerStamina, 0.0f, 100.0f, 100.0f);
     data.decoyCount = std::clamp(data.decoyCount, 0, 99);
@@ -98,7 +107,7 @@ bool SaveSystem::saveToFile(const std::string& filePath, const SaveData& rawData
         std::ofstream out(tmpPath, std::ios::trunc);
         if (!out.is_open()) return false;
 
-        out << "ECHOLABYRINTH_SAVE_V5\n";
+        out << "ECHOLABYRINTH_SAVE_V6\n";
         out << "seed " << data.runSeed << "\n";
         out << "room_count " << data.targetRoomCount << "\n";
         out << "room " << data.checkpointRoomId << "\n";
@@ -110,6 +119,8 @@ bool SaveSystem::saveToFile(const std::string& filePath, const SaveData& rawData
         out << "frequency " << data.activeFrequency << "\n";
         out << "shards " << data.echoShards << "\n";
         out << "ghost_clears " << data.ghostClearsThisRun << "\n";
+        out << "difficulty " << data.difficulty << "\n";
+        out << "tutorial_done " << (data.tutorialDone ? 1 : 0) << "\n";
         out << "volume " << data.masterVolume << "\n";
         out << "channels " << data.musicVolume << " " << data.sfxVolume << " " << data.ambientVolume << "\n";
         out << "ray_scale " << data.rayDensityScale << "\n";
@@ -173,12 +184,13 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
     if (!std::getline(in, header)) return false;
     if (!header.empty() && header.back() == '\r') header.pop_back();
 
+    const bool isV6 = (header == "ECHOLABYRINTH_SAVE_V6");
     const bool isV5 = (header == "ECHOLABYRINTH_SAVE_V5");
     const bool isV4 = (header == "ECHOLABYRINTH_SAVE_V4");
     const bool isV3 = (header == "ECHOLABYRINTH_SAVE_V3");
     const bool isV2 = (header == "ECHOLABYRINTH_SAVE_V2");
     const bool isV1 = (header == "ECHOLABYRINTH_SAVE_V1");
-    if (!isV5 && !isV4 && !isV3 && !isV2 && !isV1) {
+    if (!isV6 && !isV5 && !isV4 && !isV3 && !isV2 && !isV1) {
         return false;
     }
 
@@ -217,7 +229,7 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
             int hp = 6;
             int maxHp = 6;
             if (iss >> hp >> maxHp) {
-                parsed.playerMaxHealth = std::clamp(maxHp, 2, 20);
+                parsed.playerMaxHealth = std::clamp(maxHp, isV6 ? 1 : 2, 20);
                 parsed.playerHealth = std::clamp(hp, 1, parsed.playerMaxHealth);
             }
         } else if (key == "stamina") {
@@ -249,6 +261,16 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
             int gc = 0;
             if (iss >> gc) {
                 parsed.ghostClearsThisRun = std::clamp(gc, 0, 999);
+            }
+        } else if (key == "difficulty") {
+            int diff = 1;
+            if (iss >> diff) {
+                parsed.difficulty = std::clamp(diff, 0, 3);
+            }
+        } else if (key == "tutorial_done") {
+            int td = 0;
+            if (iss >> td) {
+                parsed.tutorialDone = (td != 0);
             }
         } else if (key == "volume") {
             float v = 80.0f;
@@ -350,8 +372,12 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
     }
 
     if (!hasRoomKey) return false;
-    if (isV5) {
+    if (isV6) {
         if (!hasChecksum || computeChecksum(parsed) != fileChecksum) {
+            return false;
+        }
+    } else if (isV5) {
+        if (!hasChecksum || computeChecksumV5(parsed) != fileChecksum) {
             return false;
         }
     } else if (isV4 || isV3) {

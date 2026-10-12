@@ -22,11 +22,12 @@ void Game::render() {
     win.clear(sf::Color(3, 6, 12));
 
     sf::View activeView = m_worldView;
-    if (m_cameraShakeTimer > 0.0f) {
-        const float mag = m_cameraShakeTimer * 12.0f;
+    if (m_cameraShakeTimer > 0.0f && m_cameraShakeAmplitude > 0.01f) {
+        const float expDecay = std::exp(-cfg::feel::kShakeDecayRate * m_cameraShakeElapsed);
+        const float mag = m_cameraShakeAmplitude * expDecay;
         activeView.move(
-            std::sin(m_runTimeSec * 55.0f) * mag,
-            std::cos(m_runTimeSec * 48.0f) * mag
+            std::sin(m_runTimeSec * 58.0f) * mag,
+            std::cos(m_runTimeSec * 51.0f) * mag
         );
     }
     win.setView(activeView);
@@ -35,9 +36,11 @@ void Game::render() {
 
     if (m_state == AppState::Playing) {
         renderHud();
-        renderCornerMinimap();
-        if (m_showMinimap) {
-            renderMinimapOverlay();
+        if (getDifficultyProfile(m_difficulty).allowMinimap) {
+            renderCornerMinimap();
+            if (m_showMinimap) {
+                renderMinimapOverlay();
+            }
         }
     } else if (m_state == AppState::Settings) {
         renderSettingsOverlay();
@@ -61,10 +64,34 @@ void Game::renderWorld() {
     m_acoustics.render(win, m_ambientVisibility, &room.walls);
     renderInteractiveObjects();
 
+    // Stage 2: Iron Foundry active steam-hammer press reverberation ring (masks footsteps by -75%)
+    if (room.biome == BiomeId::IronFoundry && isFoundryHammerMaskingActive()) {
+        const float pulse = 0.5f + 0.5f * std::sin(m_runTimeSec * 14.0f);
+        sf::CircleShape pressRing(95.0f + pulse * 35.0f);
+        pressRing.setOrigin(pressRing.getRadius(), pressRing.getRadius());
+        pressRing.setPosition({640.0f, 400.0f});
+        pressRing.setFillColor(sf::Color(251, 146, 60, 18));
+        pressRing.setOutlineThickness(2.0f);
+        pressRing.setOutlineColor(sf::Color(251, 191, 36, static_cast<sf::Uint8>(90.0f + pulse * 95.0f)));
+        win.draw(pressRing);
+    }
+
     if (m_state == AppState::Playing || m_state == AppState::Paused || m_state == AppState::GameOver) {
         for (const auto& enemy : m_enemies) {
             if (!enemy.isActive()) continue;
-            const float enemyVis = m_acoustics.queryIlluminationAt(enemy.position(), m_player.position(), &room.resonators);
+            float enemyVis = m_acoustics.queryIlluminationAt(enemy.position(), m_player.position(), &room.resonators);
+            // Stage 2: Living Mycelium bioluminescent spores softly reveal moving hunters
+            if (room.biome == BiomeId::LivingMycelium && enemy.state() != EnemyState::Idle) {
+                const float sporeGlow = 0.34f + 0.12f * std::sin(m_runTimeSec * 4.2f + enemy.position().x * 0.03f);
+                enemyVis = std::max(enemyVis, sporeGlow);
+                sf::CircleShape sporeHalo(enemy.hitRadius() + 10.0f);
+                sporeHalo.setOrigin(sporeHalo.getRadius(), sporeHalo.getRadius());
+                sporeHalo.setPosition(enemy.position());
+                sporeHalo.setFillColor(sf::Color(52, 211, 153, 36));
+                sporeHalo.setOutlineThickness(1.4f);
+                sporeHalo.setOutlineColor(sf::Color(110, 231, 183, 120));
+                win.draw(sporeHalo);
+            }
             enemy.render(win, enemyVis, m_player.position(), &m_assets);
         }
         m_player.render(win, &m_assets);
@@ -341,7 +368,7 @@ void Game::renderInteractiveObjects() {
         win.draw(zone);
     }
 
-    // 7. Render Surveyor Log Terminals
+    // 7. Render Surveyor Log Collectibles
     for (const auto& lore : room.collectibles) {
         if (lore.collected) continue;
         const float vis = std::max(0.26f + visorBoost, m_acoustics.queryIlluminationAt(lore.position, pPos));

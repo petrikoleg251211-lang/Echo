@@ -2,6 +2,7 @@
 
 #include <SFML/Graphics/Color.hpp>
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -52,6 +53,35 @@ namespace cfg {
     // Roguelike procedural run parameters
     constexpr std::size_t kDefaultRunRoomCount = 32;
 
+    // Stage 1: Game Feel, Hit-Stop, Exponential Screen Shake, & Enemy Attack Telegraphing
+    namespace feel {
+        constexpr float kHitStopDurationSec = 0.045f;       // 45 ms hit-stop on sonar damage
+        constexpr float kHitStopKillDurationSec = 0.060f;   // 60 ms hit-stop when enemy shatters
+        constexpr float kHitStopSonarHitSec = kHitStopDurationSec;
+        constexpr float kHitStopEnemyKillSec = kHitStopKillDurationSec;
+
+        constexpr float kCameraShakeDecayRate = 7.5f;       // Exponential decay rate for screen shake
+        constexpr float kShakeDecayRate = kCameraShakeDecayRate;
+        constexpr float kShakeAmpSonarHit = 4.2f;           // Subtle camera kick on sonar enemy impact
+        constexpr float kShakeAmpEnemyAlert = 6.8f;         // Camera shake when hunter enters pursuit
+        constexpr float kShakeAmpStomp = 8.5f;              // Seismic stomp shake amplitude
+        constexpr float kShakeAmpGlassShatter = 7.8f;       // Glass barrier shatter amplitude
+        constexpr float kShakeAmpPlayerDamage = 13.5f;      // Heavy impact shake when player takes hull damage
+        constexpr float kShakeAmplitudeSonarHit = kShakeAmpSonarHit;
+        constexpr float kShakeAmplitudeKill = 7.5f;
+        constexpr float kShakeAmplitudeAlert = kShakeAmpEnemyAlert;
+        constexpr float kShakeAmplitudeDamage = kShakeAmpPlayerDamage;
+
+        constexpr float kEchoPulseFreqRad = 11.5f;          // Pulsing frequency (rad/s) for wall echo traces
+        constexpr float kEchoPulseAmplitude = 0.24f;        // Amplitude of harmonic wall echo trace pulsation
+        constexpr float kEnemyMeleeTelegraphSec = 0.45f;    // 0.45s (in 0.3..0.6s) pre-strike telegraph windup
+        constexpr float kEnemyRangedTelegraphSec = 0.42f;   // 0.42s windup before Shrieker/Boss fires SonicBolts
+        constexpr float kMeleeTelegraphRangeMargin = 22.0f; // Extra distance at which melee windup starts
+        constexpr float kThreatIndicatorNoiseMin = 28.0f;   // Noise threshold to show edge-of-screen threat arrows
+        constexpr float kThreatArrowScreenMargin = 54.0f;   // Margin from viewport edge for threat chevrons
+        constexpr int kTutorialTotalRooms = 3;              // 3 interactive tutorial chambers on first run
+    } // namespace feel
+
     // Block 1 & Block 2 & Block 3: Sound as Risk Resource — Noise Meter (0..100) & Silence parameters
     namespace noise {
         constexpr float kMinNoise = 0.0f;
@@ -62,6 +92,9 @@ namespace cfg {
         constexpr float kRateWalkPerSec = 8.0f;
         constexpr float kRateSprintPerSec = 25.0f;
         constexpr float kDecaySilencePerSec = 10.0f;
+        constexpr float kSneakNoisePerSec = kRateSneakPerSec;
+        constexpr float kWalkNoisePerSec = kRateWalkPerSec;
+        constexpr float kSprintNoisePerSec = kRateSprintPerSec;
 
         // Instantaneous action noise spikes
         constexpr float kCostWhistle = 5.0f;       // Block 3.1: Narrow 15-deg Whistle (+5)
@@ -75,6 +108,8 @@ namespace cfg {
         constexpr float kCostEchoSwarmAmp = 12.0f; // Block 4.4: EchoSwarm sound amplification (+12)
         constexpr float kCostEchoStorm = 6.0f;     // Block 5.1: EchoStorm periodic ambient sweep (+6)
         constexpr float kCostBossDissonance = 15.0f; // Block 5.4: Boss Phase II dissonance wave (+15 if moving)
+        constexpr float kCostBansheeWail = 22.0f;  // Stage 2: Banshee acoustic wail spike (+22)
+        constexpr float kCostLeechDrain = 8.0f;    // Stage 2: Leech parasite acoustic drain (+8)
 
         // Noise Tier thresholds:
         //   Quiet   : [0.0, 30.0]   (Ghost Clear requires peak noise <= 30.0)
@@ -91,6 +126,147 @@ namespace cfg {
         // Ghost Clear reward multiplier when room is cleared without exceeding 30 noise
         constexpr float kGhostClearShardMultiplier = 1.50f;
     } // namespace noise
+} // namespace cfg
+
+// Stage 1.3: Four Difficulty Modes
+// - Explorer (Easy): Forgiving hull integrity, slower enemy pursuit, faster silence decay, +25% shards
+// - Surveyor (Normal): Standard balanced acoustic survival (target bot win rate 8%..15%)
+// - Abyssal  (Hard): +25% enemy spawns, slower silence decay (x0.72), -25% Echo Shards, +20% enemy HP
+// - Silence  (Hardcore): 1 HP (1 life), NO minimap (corner or overlay), +25% enemies, x0.68 silence decay
+enum class DifficultyMode : std::uint8_t {
+    Explorer = 0,
+    Surveyor = 1,
+    Abyssal = 2,
+    Silence = 3,
+    Count = 4
+};
+
+struct DifficultyProfile {
+    DifficultyMode mode;
+    const char* name;
+    const char* shortDesc;
+    int playerStartHp;
+    float enemyCountMult;
+    float enemyHpMult;
+    float enemySpeedMult;
+    float noiseGainMult;
+    float silenceDecayMult; // < 1.0 means noise decays slower
+    float shardRewardMult;  // < 1.0 means fewer Echo Shards
+    bool oneLifeOnly;       // true on Silence
+    bool allowMinimap;      // false on Silence
+};
+
+inline constexpr DifficultyProfile getDifficultyProfile(DifficultyMode mode) noexcept {
+    switch (mode) {
+        case DifficultyMode::Explorer:
+            return {
+                DifficultyMode::Explorer,
+                "EXPLORER",
+                "EASY: 8 HP, -20% ENEMY HP, +25% SILENCE DECAY & SHARDS",
+                8, 0.80f, 0.80f, 0.90f, 0.85f, 1.25f, 1.25f, false, true
+            };
+        case DifficultyMode::Surveyor:
+            return {
+                DifficultyMode::Surveyor,
+                "SURVEYOR",
+                "NORMAL: STANDARD ACOUSTIC SURVIVAL BALANCE (6 HP)",
+                6, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, false, true
+            };
+        case DifficultyMode::Abyssal:
+            return {
+                DifficultyMode::Abyssal,
+                "ABYSSAL",
+                "HARD: +25% HUNTERS, SLOWER SILENCE DECAY, -25% SHARDS",
+                5, 1.25f, 1.20f, 1.08f, 1.15f, 0.72f, 0.75f, false, true
+            };
+        case DifficultyMode::Silence:
+        default:
+            return {
+                DifficultyMode::Silence,
+                "SILENCE",
+                "HARDCORE: 1 HP, NO MINIMAP, +25% HUNTERS, SLOWER DECAY",
+                1, 1.25f, 1.25f, 1.12f, 1.20f, 0.68f, 0.75f, true, false
+            };
+    }
+}
+
+inline constexpr const char* difficultyModeName(DifficultyMode mode) noexcept {
+    switch (mode) {
+        case DifficultyMode::Explorer: return "EXPLORER [EASY]";
+        case DifficultyMode::Surveyor: return "SURVEYOR [NORMAL]";
+        case DifficultyMode::Abyssal:  return "ABYSSAL [HARD]";
+        case DifficultyMode::Silence:  return "SILENCE [HARDCORE 1-HP]";
+        default:                       return "SURVEYOR [NORMAL]";
+    }
+}
+
+inline constexpr const char* difficultyName(DifficultyMode mode) noexcept {
+    return getDifficultyProfile(mode).name;
+}
+
+// Stage 1.2 & Stage 2: Centralized BalanceTable in Config.hpp (HP, speed, damage, noise per action, 13 enemy variants)
+namespace cfg {
+namespace balance {
+
+struct EnemyBalanceSpec {
+    float maxHp;
+    float speedScale;
+    float patrolSpeed;
+    float investigateSpeed;
+    float pursueSpeed;
+    int contactDamage;
+};
+
+struct BalanceTable {
+    // Player baseline stats
+    int playerBaseHp{6};
+    int playerMaxHpCap{12};
+    float playerStaminaMax{100.0f};
+    float speedSneak{kSpeedSneak};
+    float speedWalk{kSpeedWalk};
+    float speedSprint{kSpeedSprint};
+    float baseSonarDmgScale{11.5f};
+    float sonarBaseDamageScale{11.5f};
+    int enemyMeleeDamage{1};
+    int enemyBoltDamage{1};
+    int startingDecoys{3};
+    int startingEchoTraps{3};
+
+    // Noise per action
+    float noiseSneakPerSec{noise::kRateSneakPerSec};
+    float noiseWalkPerSec{noise::kRateWalkPerSec};
+    float noiseSprintPerSec{noise::kRateSprintPerSec};
+    float noiseSilenceDecayPerSec{noise::kDecaySilencePerSec};
+    float noiseWhistle{noise::kCostWhistle};
+    float noisePing{noise::kCostPing};
+    float noiseWaterStep{noise::kCostWaterStep};
+    float noiseDecoy{noise::kCostDecoyImpact};
+    float noiseCombatHit{noise::kCostCombatHit};
+    float noiseRadialPulse{noise::kCostRadialPulse};
+    float noiseStomp{noise::kCostStomp};
+    float noiseGlassShatter{noise::kCostGlassShatter};
+
+    // 13 Enemy Archetype Balance Rows (indexed by EnemyVariant 0..12)
+    std::array<EnemyBalanceSpec, 13> enemies{{
+        {42.0f,  1.00f, 78.0f, 128.0f, 178.0f, 1}, // 0: Stalker
+        {95.0f,  0.88f, 78.0f, 128.0f, 178.0f, 1}, // 1: Warden
+        {38.0f,  0.65f, 78.0f, 128.0f, 178.0f, 1}, // 2: Shrieker
+        {52.0f,  1.15f, 78.0f, 128.0f, 178.0f, 1}, // 3: Phantom
+        {240.0f, 0.88f, 78.0f, 128.0f, 178.0f, 1}, // 4: AbyssalBoss (Choir Sovereign)
+        {40.0f,  1.12f, 78.0f, 128.0f, 178.0f, 1}, // 5: SilentStalker
+        {155.0f, 0.76f, 78.0f, 128.0f, 178.0f, 1}, // 6: DeafBrute
+        {58.0f,  1.24f, 78.0f, 128.0f, 178.0f, 1}, // 7: Mimic
+        {28.0f,  1.22f, 78.0f, 128.0f, 178.0f, 1}, // 8: EchoSwarm
+        {34.0f,  1.28f, 78.0f, 128.0f, 178.0f, 1}, // 9: Leech (Acoustic Parasite)
+        {48.0f,  0.94f, 78.0f, 128.0f, 178.0f, 1}, // 10: Banshee (Wailing Siren)
+        {76.0f,  0.84f, 78.0f, 128.0f, 178.0f, 1}, // 11: TuningForkConstruct (Resonance Automaton)
+        {150.0f, 0.96f, 78.0f, 128.0f, 178.0f, 1}  // 12: TheConductor (Room 16 Mini-Boss)
+    }};
+};
+
+constexpr BalanceTable kDefaultBalance{};
+
+} // namespace balance
 } // namespace cfg
 
 // Block 1: Noise Tier classification
@@ -121,8 +297,34 @@ enum class NoiseAction : std::uint8_t {
     WaterSplash = 11,
     EchoSwarmAmplify = 12,
     EchoStormPulse = 13,
-    BossDissonanceShock = 14
+    BossDissonanceShock = 14,
+    BansheeWail = 15,
+    LeechDrain = 16
 };
+
+// Stage 1.5: Readability of Fear — human-readable HUD icon & label for the latest noise source
+inline constexpr const char* noiseActionHudLabel(NoiseAction action) noexcept {
+    switch (action) {
+        case NoiseAction::StepSneak:           return "[SNEAK] SOFT STEP (+2/s)";
+        case NoiseAction::StepWalk:            return "[WALK] FOOTSTEP (+8/s)";
+        case NoiseAction::StepSprint:          return "[SPRINT] HEAVY RUN (+25/s)";
+        case NoiseAction::DirectionalPing:     return "[PING] SONAR CONE (+12)";
+        case NoiseAction::RadialPulse:         return "[PULSE] RADIAL WAVE (+30)";
+        case NoiseAction::DecoyImpact:         return "[DECOY] STONE LURE (+15)";
+        case NoiseAction::CombatHit:           return "[IMPACT] RESONANCE HIT (+10)";
+        case NoiseAction::SilenceDecay:        return "[SILENCE] QUIET DECAY (-10/s)";
+        case NoiseAction::WhistlePing:         return "[WHISTLE] NARROW BEAM (+5)";
+        case NoiseAction::StompImpact:         return "[STOMP] SEISMIC SHOCK (+35)";
+        case NoiseAction::GlassShatter:        return "[GLASS] BARRIER SHATTER (+40)";
+        case NoiseAction::WaterSplash:         return "[WATER] PUDDLE SPLASH (+15)";
+        case NoiseAction::EchoSwarmAmplify:    return "[SWARM] PARASITE RELAY (+12)";
+        case NoiseAction::EchoStormPulse:      return "[STORM] AMBIENT SWEEP (+6)";
+        case NoiseAction::BossDissonanceShock: return "[CHOIR] DISSONANCE WAVE (+15)";
+        case NoiseAction::BansheeWail:         return "[BANSHEE] PIERCING WAIL (+22)";
+        case NoiseAction::LeechDrain:          return "[LEECH] PARASITE FEED (+8)";
+    }
+    return "[SILENCE] QUIET";
+}
 
 inline constexpr NoiseTier classifyNoiseTier(float noiseLevel) noexcept {
     if (noiseLevel >= cfg::noise::kThresholdScream) {
@@ -201,6 +403,12 @@ inline float applyNoiseAction(
         case NoiseAction::BossDissonanceShock:
             delta = cfg::noise::kCostBossDissonance * gainMultiplier;
             break;
+        case NoiseAction::BansheeWail:
+            delta = cfg::noise::kCostBansheeWail * gainMultiplier;
+            break;
+        case NoiseAction::LeechDrain:
+            delta = cfg::noise::kCostLeechDrain * gainMultiplier;
+            break;
     }
     return std::clamp(currentNoise + delta, cfg::noise::kMinNoise, cfg::noise::kMaxNoise);
 }
@@ -238,6 +446,7 @@ inline constexpr const char* frequencyName(AcousticFrequency freq) noexcept {
     return "MID [2]";
 }
 
+// 8 Surface Materials (including Stage 2 EchoCrystal)
 enum class SurfaceMaterial : std::uint8_t {
     Stone = 0,
     Concrete = 1,
@@ -246,8 +455,80 @@ enum class SurfaceMaterial : std::uint8_t {
     DampMoss = 4,
     ResonanceDoor = 5,
     Glass = 6,
-    Count = 7
+    EchoCrystal = 7,
+    Count = 8
 };
+
+// Stage 2: 4 Acoustic Biomes of 8 Chambers Each (32 Rooms total)
+enum class BiomeId : std::uint8_t {
+    DrownedGalleries = 0, // Rooms 0..7   (Water, Concrete: x1.5 sound range, muffled steps, water ripples)
+    CrystalVaults = 1,    // Rooms 8..15  (EchoCrystal, Glass: chaotic ray splitting & shatter noise; Room 16 = The Conductor)
+    IronFoundry = 2,      // Rooms 16..23 (Metal, Concrete: long reverberation & periodic steam-hammer masking)
+    LivingMycelium = 3,   // Rooms 24..31 (DampMoss, Stone: sound absorption, fast silence decay & spore enemy reveal)
+    Count = 4
+};
+
+struct BiomeSpec {
+    BiomeId id;
+    const char* name;
+    const char* acousticRuleDesc;
+    SurfaceMaterial primaryMaterial;
+    SurfaceMaterial secondaryMaterial;
+    float soundRangeMult;       // 1.5x in DrownedGalleries, 0.82x in LivingMycelium
+    float stepNoiseMult;        // 0.75x muffled footsteps in DrownedGalleries
+    float silenceDecayMult;     // 1.50x faster decay in LivingMycelium
+};
+
+inline constexpr BiomeSpec getBiomeSpec(BiomeId id) noexcept {
+    switch (id) {
+        case BiomeId::DrownedGalleries:
+            return {
+                BiomeId::DrownedGalleries,
+                "DROWNED GALLERIES",
+                "WATER CONDUCTS SOUND x1.5 FARTHER, MUFFLES SOFT STEPS & VISUALIZES WAVES",
+                SurfaceMaterial::Water,
+                SurfaceMaterial::Concrete,
+                1.50f, 0.75f, 1.00f
+            };
+        case BiomeId::CrystalVaults:
+            return {
+                BiomeId::CrystalVaults,
+                "CRYSTAL VAULTS",
+                "ECHO CRYSTALS SPLIT & SCATTER RAYS; BRITTLE GLASS SHATTERS LOUDLY (+40 NOISE)",
+                SurfaceMaterial::EchoCrystal,
+                SurfaceMaterial::Glass,
+                1.15f, 1.05f, 0.95f
+            };
+        case BiomeId::IronFoundry:
+            return {
+                BiomeId::IronFoundry,
+                "IRON FOUNDRY",
+                "METAL REVERBERATES (+2 BOUNCES); PERIODIC FOUNDRY PRESS MASKS FOOTSTEPS",
+                SurfaceMaterial::Metal,
+                SurfaceMaterial::Concrete,
+                1.10f, 1.00f, 0.90f
+            };
+        case BiomeId::LivingMycelium:
+        default:
+            return {
+                BiomeId::LivingMycelium,
+                "LIVING MYCELIUM",
+                "MYCELIUM ABSORBS SOUND (-18% RANGE, +50% SILENCE DECAY) & SPORES REVEAL HUNTERS",
+                SurfaceMaterial::DampMoss,
+                SurfaceMaterial::Stone,
+                0.82f, 0.80f, 1.50f
+            };
+    }
+}
+
+inline constexpr const char* biomeName(BiomeId id) noexcept {
+    return getBiomeSpec(id).name;
+}
+
+inline constexpr BiomeId biomeForRoomIndex(std::size_t roomIndex) noexcept {
+    const std::size_t idx = (roomIndex / 8u) % static_cast<std::size_t>(BiomeId::Count);
+    return static_cast<BiomeId>(idx);
+}
 
 enum class WaveSignature : std::uint8_t {
     FootstepSneak = 0,
@@ -340,35 +621,9 @@ struct RelicSpec {
     int shopCostShards;
 };
 
-inline RelicSpec getRelicSpec(RelicId id) noexcept {
-    switch (id) {
-        case RelicId::HarmonicAmplifier:
-            return {id, "HARMONIC AMPLIFIER", "+35% SONAR RANGE & WAVE INTENSITY", sf::Color(56, 189, 248), 25};
-        case RelicId::MossTreadBoots:
-            return {id, "MOSS-TREAD BOOTS", "-45% STEP NOISE & SHALE IMMUNITY", sf::Color(52, 211, 153), 22};
-        case RelicId::PrismaticMirror:
-            return {id, "PRISMATIC MIRROR", "+2 WALL REFLECTIONS & +45% BOUNCE DMG", sf::Color(165, 243, 252), 28};
-        case RelicId::PiezoArmorCore:
-            return {id, "PIEZO ARMOR CORE", "+2 MAX HULL INTEGRITY & RETALIATION WAVE", sf::Color(251, 191, 36), 30};
-        case RelicId::PhantomDecoyRig:
-            return {id, "PHANTOM DECOY RIG", "+3 DECOYS & HIGH-ENERGY DECOY SHRAPNEL", sf::Color(192, 132, 252), 24};
-        case RelicId::ResonanceCapacitor:
-            return {id, "RESONANCE CAPACITOR", "-25% SONAR COOLDOWN & +35% STAMINA REGEN", sf::Color(45, 212, 191), 26};
-        case RelicId::SubharmonicVisor:
-            return {id, "SUBHARMONIC VISOR", "REVEALS SECRET ROOMS & PASSIVE AURA", sf::Color(244, 114, 182), 25};
-        case RelicId::EchoSiphonCoil:
-            return {id, "ECHO SIPHON COIL", "SONAR HITS RESTORE STAMINA & 2X RESONATOR CHARGE", sf::Color(129, 140, 248), 26};
-        case RelicId::SilentStep:
-            return {id, "SILENT STEP", "-35% NOISE GENERATION & +18% STEALTH SPEED", sf::Color(110, 231, 183), 32};
-        case RelicId::PhaseDampener:
-            return {id, "PHASE DAMPENER", "+50% SILENCE DECAY & -30% PULSE/PING NOISE", sf::Color(96, 165, 250), 27};
-        case RelicId::UltrasonicLens:
-            return {id, "ULTRASONIC LENS", "+40% HIGH-FREQ DMG & +2 ECHO TRAPS", sf::Color(232, 121, 249), 28};
-        case RelicId::AbyssalTuningFork:
-        default:
-            return {id, "ABYSSAL TUNING FORK", "+25% SHARD GAIN & +30% BOSS/ELITE RESONANCE", sf::Color(250, 204, 21), 34};
-    }
-}
+// Implemented in src/Relics.cpp
+RelicSpec getRelicSpec(RelicId id) noexcept;
+RelicId getPedestalRelicFromPool(std::size_t index) noexcept;
 
 struct MaterialProperties {
     float reflectivity;         // Fraction of wave energy retained after bounce
@@ -399,6 +654,9 @@ inline MaterialProperties getMaterialProperties(SurfaceMaterial mat) noexcept {
             return {0.20f, 0.14f, 1.5f, 15.0f, 0, 1.0f, sf::Color(52, 211, 153), sf::Color(16, 58, 44), "DAMP MOSS"};
         case SurfaceMaterial::ResonanceDoor:
             return {0.92f, 0.35f, 3.4f, 12.0f, 0, 1.0f, sf::Color(192, 132, 252), sf::Color(68, 38, 102), "RESONANCE GATE"};
+        case SurfaceMaterial::EchoCrystal:
+            // Stage 2: Crystal Vaults — splits & scatters sonar rays chaotically with high reflectivity
+            return {0.96f, 0.38f, 3.8f, 10.0f, 2, 1.25f, sf::Color(232, 121, 249), sf::Color(88, 28, 135), "ECHO CRYSTAL"};
         case SurfaceMaterial::Glass:
         default:
             // Block 2.3: Brittle Glass — semi-transparent to sound until shattered by high-energy pulse (+40 noise)
@@ -450,46 +708,7 @@ struct CodexEntrySpec {
     const char* excerpt;
 };
 
-inline CodexEntrySpec getCodexEntrySpec(int index) noexcept {
-    switch (index % static_cast<int>(kTotalCodexFragments)) {
-        case 0:
-            return {200, "LOG 01: RESONANCE PROTOCOL", "EXPEDITION DIRECTIVE",
-                    "SOUND IS SIGHT, WEAPON, AND RISK. KEEP CHAMBER PEAK NOISE <= 30 TO ACHIEVE GHOST CLEAR."};
-        case 1:
-            return {201, "LOG 02: THE BLIND ECOSYSTEM", "XENO-BIOLOGY",
-                    "SIGHTLESS STALKERS EVOLVED HYPER-ACUTE TYMPANIC MEMBRANES. EVEN A SINGLE SPRINT STEP DRAWS THEM."};
-        case 2:
-            return {202, "LOG 03: BRYOPHYTE DAMPENING", "MATERIAL SCIENCE",
-                    "CAVERN DAMP MOSS ABSORBS 80% OF SONAR REFLECTIONS AND HALVES FOOTSTEP NOISE WHEN CROUCHING NEARBY."};
-        case 3:
-            return {203, "LOG 04: SPECULAR STEEL MIRRORS", "ACOUSTIC OPTICS",
-                    "POLISHED FOUNDRY PLATES REFLECT WAVES WITHOUT ENERGY LOSS AND ADD +2 EXTRA SPECULAR BOUNCES."};
-        case 4:
-            return {204, "LOG 05: BRITTLE SILICATE PARTITIONS", "STRUCTURAL HAZARD",
-                    "CRYSTALLINE GLASS TRANSMITS 72% OF SOUND UNTIL SHATTERED BY RADIAL PULSE OR STOMP (+40 NOISE)."};
-        case 5:
-            return {205, "LOG 06: HYDRO-ACOUSTIC CONDUCTION", "FLUID DYNAMICS",
-                    "FLOODED AQUEDUCT PUDDLES DOUBLE WAVE PROPAGATION RANGE BUT EMIT A +15 NOISE SPLASH WHEN CROSSED."};
-        case 6:
-            return {206, "LOG 07: HARMONIC PIPE COLUMNS", "RESONANCE LURES",
-                    "STRIKING A HOLLOW CONDUIT COLUMN SETS OFF A 4-SECOND HARMONIC HUM THAT ILLUMINATES AND LURES HUNTERS."};
-        case 7:
-            return {207, "LOG 08: ULTRASONIC WHISTLE & STOMP", "TACTICAL ARSENAL",
-                    "NARROW 15-DEG WHISTLE BEAMS ADD ONLY +5 NOISE; SEISMIC STOMPS (+35 NOISE) REPEL HUNTERS AND SHATTER GLASS."};
-        case 8:
-            return {208, "LOG 09: SPECIMEN ALPHA — SILENT HUNTER", "THREAT DOSSIER",
-                    "EMITS ZERO PASSIVE FOOTSTEP TREMORS. LISTEN FOR ITS 0.5-SECOND INHALE HISS BEFORE IT LUNGES."};
-        case 9:
-            return {209, "LOG 10: SPECIMEN BETA — DEAF BRUTE", "THREAT DOSSIER",
-                    "OSSIFIED CRANIUM IGNORES AIRBORNE WHISTLES AND PINGS; REACTS SOLELY TO GROUND VIBRATIONS."};
-        case 10:
-            return {210, "LOG 11: SPECIMEN GAMMA — RESONANCE MIMIC", "THREAT DOSSIER",
-                    "IMITATES HARMONIC CRYSTALS WITH DECEPTIVE LURE PULSES. SCAN WITH HIGH FREQUENCY [3] OR WHISTLE [Q] TO UNMASK."};
-        case 11:
-        default:
-            return {211, "LOG 12: THE CHOIR SOVEREIGN", "ABYSSAL CORE",
-                    "THE THREE-PHASE APEX CONDUCTOR OF THE DEEP LABYRINTH. SHATTER ITS HARMONIC SHELL TO UNSEAL THE ASCENT."};
-    }
-}
+// Implemented in src/Codex.cpp
+CodexEntrySpec getCodexEntrySpec(int index) noexcept;
 
 } // namespace echo

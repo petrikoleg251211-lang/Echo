@@ -125,6 +125,7 @@ void AcousticSystem::clear() noexcept {
     m_activeRayCount = 0;
     m_activeEchoCount = 0;
     m_shatteredGlassCount = 0;
+    m_crystalSplitCount = 0;
 }
 
 int AcousticSystem::consumeShatteredGlassCount(sf::Vector2f* outLastShatterPos) noexcept {
@@ -134,6 +135,40 @@ int AcousticSystem::consumeShatteredGlassCount(sf::Vector2f* outLastShatterPos) 
     }
     m_shatteredGlassCount = 0;
     return count;
+}
+
+int AcousticSystem::consumeCrystalSplitCount() noexcept {
+    const int count = m_crystalSplitCount;
+    m_crystalSplitCount = 0;
+    return count;
+}
+
+void AcousticSystem::spawnSplitRay(const AcousticRay& parentRay, sf::Vector2f splitOrigin, float angleOffsetRad) noexcept {
+    AcousticRay& child = m_rays[m_rayCursor];
+    m_rayCursor = (m_rayCursor + 1) % m_rays.size();
+    const float c = std::cos(angleOffsetRad);
+    const float s = std::sin(angleOffsetRad);
+    const sf::Vector2f rotatedDir{
+        parentRay.dir.x * c - parentRay.dir.y * s,
+        parentRay.dir.x * s + parentRay.dir.y * c
+    };
+    child.pos = splitOrigin;
+    child.prevPos = splitOrigin;
+    child.dir = normalizeOrZero(rotatedDir);
+    child.speed = parentRay.speed * 1.04f;
+    child.intensity = std::max(0.18f, parentRay.intensity * 0.78f);
+    child.maxDistance = parentRay.maxDistance * 1.15f;
+    child.traveled = parentRay.traveled * 0.65f;
+    child.reflections = parentRay.reflections;
+    child.maxReflections = static_cast<std::uint8_t>(std::min<int>(10, static_cast<int>(parentRay.maxReflections) + 1));
+    child.signature = parentRay.signature;
+    child.frequency = parentRay.frequency;
+    child.tint = sf::Color(232, 121, 249);
+    child.emittedByPlayer = parentRay.emittedByPlayer;
+    child.metalBonusApplied = parentRay.metalBonusApplied;
+    child.waterBoostApplied = parentRay.waterBoostApplied;
+    child.crystalSplitApplied = true;
+    child.active = true;
 }
 
 void AcousticSystem::emitPulse(
@@ -183,6 +218,7 @@ void AcousticSystem::emitPulse(
         ray.emittedByPlayer = emittedByPlayer;
         ray.metalBonusApplied = false;
         ray.waterBoostApplied = false;
+        ray.crystalSplitApplied = false;
         ray.active = true;
     }
 
@@ -330,8 +366,9 @@ std::vector<int> AcousticSystem::update(
         }
     }
 
-    m_activeRayCount = 0;
-    for (auto& ray : m_rays) {
+    const std::size_t rayPoolSize = m_rays.size();
+    for (std::size_t idx = 0; idx < rayPoolSize; ++idx) {
+        AcousticRay& ray = m_rays[idx];
         if (!ray.active) continue;
 
         const float stepDist = ray.speed * dt;
@@ -416,9 +453,7 @@ std::vector<int> AcousticSystem::update(
                 // Ray continues right through the newly shattered glass barrier
                 ray.pos = nextPos;
                 ray.traveled += stepDist;
-                if (ray.traveled < ray.maxDistance && ray.intensity >= 0.05f) {
-                    ++m_activeRayCount;
-                } else {
+                if (ray.traveled >= ray.maxDistance || ray.intensity < 0.05f) {
                     ray.active = false;
                 }
                 continue;
@@ -468,6 +503,17 @@ std::vector<int> AcousticSystem::update(
             ray.dir = normalizeOrZero(ray.dir - 2.0f * dn * wallNormal);
             const float remainingStep = stepDist * (1.0f - bestT);
             ray.pos = bestHit + wallNormal * 0.6f + ray.dir * remainingStep;
+
+            // Stage 2: Crystal Vaults — EchoCrystal splits & scatters rays chaotically into bifurcated prism beams
+            if (hitWall->material == SurfaceMaterial::EchoCrystal && !ray.crystalSplitApplied && ray.intensity >= 0.22f) {
+                ray.crystalSplitApplied = true;
+                ray.maxDistance *= matProps.distanceMultiplier;
+                const float jitter = 0.38f + 0.12f * std::sin(bestHit.x * 0.07f + bestHit.y * 0.11f);
+                const AcousticRay parentSnapshot = ray;
+                spawnSplitRay(parentSnapshot, ray.pos, jitter);
+                spawnSplitRay(parentSnapshot, ray.pos, -jitter * 0.85f);
+                ++m_crystalSplitCount;
+            }
         } else {
             ray.pos = nextPos;
         }
@@ -477,8 +523,11 @@ std::vector<int> AcousticSystem::update(
             ray.active = false;
             continue;
         }
+    }
 
-        ++m_activeRayCount;
+    m_activeRayCount = 0;
+    for (const auto& ray : m_rays) {
+        if (ray.active) ++m_activeRayCount;
     }
 
     m_activeEchoCount = 0;
@@ -682,8 +731,8 @@ void AcousticSystem::render(
             if (w.isOpen) continue;
             const MaterialProperties mp = getMaterialProperties(w.material);
             sf::Color lineCol = mp.echoColor;
-            lineCol.a = (w.material == SurfaceMaterial::Glass)
-                ? static_cast<sf::Uint8>(std::min<int>(180, ambAlpha * 2 + 40))
+            lineCol.a = (w.material == SurfaceMaterial::Glass || w.material == SurfaceMaterial::EchoCrystal)
+                ? static_cast<sf::Uint8>(std::min<int>(185, ambAlpha * 2 + 44))
                 : ambAlpha;
             m_echoLines.append(sf::Vertex(w.a, lineCol));
             m_echoLines.append(sf::Vertex(w.b, lineCol));
@@ -693,11 +742,14 @@ void AcousticSystem::render(
     for (const auto& echo : m_echoes) {
         if (!echo.active) continue;
         const float lifeRatio = 1.0f - (echo.age / echo.lifetime);
-        const float smoothAlpha = std::clamp(lifeRatio * lifeRatio * echo.intensity, 0.0f, 1.0f);
+        const float harmonicPulse = 1.0f + cfg::feel::kEchoPulseAmplitude *
+            std::sin(echo.age * cfg::feel::kEchoPulseFreqRad + (echo.hitPoint.x + echo.hitPoint.y) * 0.025f);
+        const float smoothAlpha = std::clamp(lifeRatio * lifeRatio * echo.intensity * harmonicPulse, 0.0f, 1.0f);
         const MaterialProperties mp = getMaterialProperties(echo.material);
 
-        const sf::Vector2f p1 = echo.hitPoint - echo.tangent * echo.halfLength;
-        const sf::Vector2f p2 = echo.hitPoint + echo.tangent * echo.halfLength;
+        const float pulsedHalfLen = echo.halfLength * (0.94f + 0.08f * harmonicPulse);
+        const sf::Vector2f p1 = echo.hitPoint - echo.tangent * pulsedHalfLen;
+        const sf::Vector2f p2 = echo.hitPoint + echo.tangent * pulsedHalfLen;
 
         sf::Color fillOuter = mp.fillTint;
         fillOuter.a = static_cast<sf::Uint8>(smoothAlpha * 185.0f);
@@ -737,6 +789,12 @@ void AcousticSystem::render(
             const float rippleOffset = 3.5f + std::sin(echo.age * 8.0f) * 2.0f;
             m_echoLines.append(sf::Vertex(p1 + echo.normal * rippleOffset, rippleCol));
             m_echoLines.append(sf::Vertex(p2 + echo.normal * rippleOffset, rippleCol));
+        } else if (echo.material == SurfaceMaterial::EchoCrystal) {
+            sf::Color prismCol(244, 114, 182, static_cast<sf::Uint8>(smoothAlpha * 210.0f));
+            m_echoLines.append(sf::Vertex(echo.hitPoint - echo.normal * 6.0f - echo.tangent * 4.0f, prismCol));
+            m_echoLines.append(sf::Vertex(echo.hitPoint + echo.normal * 6.0f + echo.tangent * 4.0f, prismCol));
+            m_echoLines.append(sf::Vertex(echo.hitPoint - echo.normal * 6.0f + echo.tangent * 4.0f, prismCol));
+            m_echoLines.append(sf::Vertex(echo.hitPoint + echo.normal * 6.0f - echo.tangent * 4.0f, prismCol));
         } else if (echo.material == SurfaceMaterial::Metal || echo.material == SurfaceMaterial::Glass) {
             sf::Color specCol(224, 242, 254, static_cast<sf::Uint8>(smoothAlpha * 185.0f));
             m_echoLines.append(sf::Vertex(echo.hitPoint - echo.normal * 3.5f, specCol));

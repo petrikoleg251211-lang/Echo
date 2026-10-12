@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(EchoLabyrinth_SFML VERSION 5.0.0 LANGUAGES CXX)
+project(EchoLabyrinth_SFML VERSION 5.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ECHO_AUTO_FETCH_SFML "Automatically download and build SFML 2.6.1 if not installed on the system" ON)
+option(ECHO_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer (GCC/Clang)" OFF)
 
 # 1. Try to locate a pre-installed SFML 2.5+ package first
 find_package(SFML 2.5 COMPONENTS graphics window audio system QUIET)
@@ -49,15 +50,24 @@ set(ECHO_SOURCES
     src/AcousticSystem.cpp
     src/AssetManager.cpp
     src/AudioManager.cpp
+    src/SoundtrackComposer.cpp
     src/UiRenderer.cpp
     src/SaveSystem.cpp
-    src/Labyrinth.cpp
+    src/LabyrinthGen.cpp
+    src/LabyrinthRooms.cpp
+    src/Relics.cpp
+    src/Codex.cpp
     src/Player.cpp
     src/EnemyAI.cpp
+    src/EnemyVariants.cpp
+    src/BossAI.cpp
     src/Game.cpp
+    src/GameRun.cpp
+    src/GameNoise.cpp
     src/GameInput.cpp
     src/GameWorldRender.cpp
     src/GameHudRender.cpp
+    src/GameBalance.cpp
     src/GameSelfTest.cpp
 )
 
@@ -70,6 +80,10 @@ if(MSVC)
     target_compile_definitions(EchoLabyrinth_SFML PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX)
 else()
     target_compile_options(EchoLabyrinth_SFML PRIVATE -Wall -Wextra -Wpedantic)
+    if(ECHO_ENABLE_SANITIZERS)
+        target_compile_options(EchoLabyrinth_SFML PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer -g)
+        target_link_options(EchoLabyrinth_SFML PRIVATE -fsanitize=address,undefined)
+    endif()
 endif()
 
 target_link_libraries(EchoLabyrinth_SFML PRIVATE

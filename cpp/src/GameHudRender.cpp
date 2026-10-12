@@ -74,20 +74,102 @@ void Game::renderNoiseWaveMeter(sf::Vector2f topLeft, sf::Vector2f size) {
     win.draw(wave);
 }
 
+void Game::renderThreatDirectionIndicators() {
+    if (!m_window) return;
+    auto& win = *m_window;
+    const sf::Vector2f pPos = m_player.position();
+    const NoiseTier nTier = classifyNoiseTier(m_noiseLevel);
+    const bool loudNoiseActive = (nTier == NoiseTier::Audible || nTier == NoiseTier::Loud || nTier == NoiseTier::Scream);
+
+    for (const auto& enemy : m_enemies) {
+        if (!enemy.isActive()) continue;
+        const bool isHunting = (enemy.state() == EnemyState::PursuePlayer ||
+                                enemy.state() == EnemyState::InvestigateSound ||
+                                enemy.isAttackTelegraphing());
+        if (!loudNoiseActive && !isHunting) continue;
+
+        const sf::Vector2f toEnemy = enemy.position() - pPos;
+        const float dist = std::sqrt(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
+        if (dist < 1e-3f) continue;
+
+        const float angle = std::atan2(toEnemy.y, toEnemy.x);
+        const sf::Vector2f dir{std::cos(angle), std::sin(angle)};
+        const sf::Vector2f perp{-dir.y, dir.x};
+
+        // Clamp threat chevron along an elliptical HUD perimeter around the screen center
+        const sf::Vector2f screenCenter{cfg::kWorldWidth * 0.5f, cfg::kWorldHeight * 0.5f};
+        const float rx = cfg::kWorldWidth * 0.5f - cfg::feel::kThreatArrowScreenMargin;
+        const float ry = cfg::kWorldHeight * 0.5f - cfg::feel::kThreatArrowScreenMargin - 36.0f;
+        const sf::Vector2f arrowPos{
+            std::clamp(screenCenter.x + dir.x * std::min(dist * 0.85f, rx), 64.0f, cfg::kWorldWidth - 64.0f),
+            std::clamp(screenCenter.y + dir.y * std::min(dist * 0.85f, ry), 92.0f, cfg::kWorldHeight - 118.0f)
+        };
+
+        const float pulse = 0.65f + 0.35f * std::sin(m_runTimeSec * 12.0f);
+        sf::Color col(250, 204, 21, static_cast<sf::Uint8>(185.0f * pulse));
+        const char* statusTag = "INVESTIGATING SOUND";
+        if (enemy.isAttackTelegraphing()) {
+            col = sf::Color(255, 56, 92, 245);
+            statusTag = "STRIKE INCOMING!";
+        } else if (enemy.state() == EnemyState::PursuePlayer) {
+            col = sf::Color(244, 63, 94, static_cast<sf::Uint8>(235.0f * pulse));
+            statusTag = "HUNTING YOU!";
+        }
+
+        // Draw directional chevron triangle pointing toward the hunter
+        sf::VertexArray chevron(sf::Triangles, 3);
+        chevron[0] = sf::Vertex(arrowPos + dir * 15.0f, col);
+        chevron[1] = sf::Vertex(arrowPos - dir * 8.0f + perp * 10.0f, sf::Color(col.r, col.g, col.b, 140));
+        chevron[2] = sf::Vertex(arrowPos - dir * 8.0f - perp * 10.0f, sf::Color(col.r, col.g, col.b, 140));
+        win.draw(chevron);
+
+        char distBuf[64];
+        std::snprintf(distBuf, sizeof(distBuf), "%s [%dm]", statusTag, static_cast<int>(dist * 0.1f));
+        m_ui.drawText(win, distBuf, {arrowPos.x, arrowPos.y + 14.0f}, 9.0f, col, TextAlign::Center, true);
+    }
+}
+
+void Game::renderTutorialBanner() {
+    if (!m_window || m_tutorialDone || m_tutorialRoomStage >= 3) return;
+    auto& win = *m_window;
+
+    std::string stepTitle;
+    std::string stepHint;
+    if (m_tutorialRoomStage == 0) {
+        stepTitle = "TUTORIAL [1/3]: SILENT MOVEMENT & SNEAK";
+        stepHint = std::string("MOVE [WASD]: ") + (m_tutStepMoved ? "DONE" : "PENDING") +
+                   "   |   HOLD SNEAK [SHIFT] WHILE MOVING: " + (m_tutStepSneaked ? "DONE" : "PENDING");
+    } else if (m_tutorialRoomStage == 1) {
+        stepTitle = "TUTORIAL [2/3]: ECHOLOCATION SONAR";
+        stepHint = "EMIT DIRECTIONAL PING [LMB / E], RADIAL PULSE [SPACE], OR WHISTLE [Q] TO ILLUMINATE WALLS";
+    } else if (m_tutorialRoomStage == 2) {
+        stepTitle = "TUTORIAL [3/3]: ACOUSTIC DECEPTION & LURES";
+        stepHint = "PLACE AN ECHO TRAP [R] OR THROW A DECOY STONE [RMB / G] TO LURE HUNTERS AWAY FROM YOU";
+    }
+
+    m_ui.drawPanel(win, {230.0f, 126.0f}, {820.0f, 48.0f}, sf::Color(8, 28, 44, 230), sf::Color(52, 211, 153, 220), 1.6f);
+    m_ui.drawText(win, stepTitle, {640.0f, 132.0f}, 11.0f, sf::Color(52, 211, 153), TextAlign::Center, true);
+    m_ui.drawText(win, stepHint, {640.0f, 152.0f}, 10.0f, sf::Color(226, 232, 240), TextAlign::Center);
+}
+
 void Game::renderHud() {
     if (!m_window) return;
     auto& win = *m_window;
     const auto& room = m_labyrinth.currentRoom();
 
-    // Top-left Chamber & Objective Banner
-    m_ui.drawPanel(win, {16.0f, 14.0f}, {690.0f, 62.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
-    std::string header = room.name + "  [" + std::string(Labyrinth::roomTypeName(room.type)) + "]";
-    if (room.roomEvent != RoomEvent::None) {
+    // Stage 1.5: Directional Threat Chevrons at HUD perimeter
+    renderThreatDirectionIndicators();
+
+    // Top-left Chamber, Biome, Difficulty & Objective Banner
+    m_ui.drawPanel(win, {16.0f, 14.0f}, {720.0f, 62.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
+    std::string header = room.name + "  [" + room.sectorTitle + "]  //  " +
+                         std::string(difficultyModeName(m_difficulty));
+    if (room.biome == BiomeId::IronFoundry && isFoundryHammerMaskingActive()) {
+        header += "  //  [FOUNDRY PRESS: -75% STEP NOISE]";
+    } else if (room.roomEvent != RoomEvent::None) {
         header += "  //  " + std::string(roomEventName(room.roomEvent));
-    } else {
-        header += "   //   SEED #" + std::to_string(m_labyrinth.runSeed());
     }
-    m_ui.drawText(win, header, {28.0f, 22.0f}, 12.0f, sf::Color(56, 189, 248), TextAlign::Left, true);
+    m_ui.drawText(win, header, {28.0f, 22.0f}, 11.0f, sf::Color(56, 189, 248), TextAlign::Left, true);
     m_ui.drawText(win, room.objectiveText, {28.0f, 48.0f}, 10.5f, sf::Color(203, 213, 225));
 
     // Bottom-left Player Vitality, Stamina, Shards, & Relics Panel
@@ -145,7 +227,7 @@ void Game::renderHud() {
         sf::Color(52, 211, 153)
     );
 
-    // Bottom-Center Block 1: Oscilloscope Wave Noise Meter (0..100) & Ghost Clear Status
+    // Bottom-Center Block 1 & Stage 1.5: Oscilloscope Wave Noise Meter (0..100), Last Noise Cause Icon & Ghost Clear Status
     m_ui.drawPanel(win, {548.0f, 704.0f}, {352.0f, 82.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
     const NoiseTier nTier = classifyNoiseTier(m_noiseLevel);
     sf::Color tierCol(52, 211, 153);
@@ -165,17 +247,38 @@ void Game::renderHud() {
 
     renderNoiseWaveMeter({562.0f, 732.0f}, {324.0f, 20.0f});
 
-    const bool ghostEligible = (m_roomPeakNoise <= cfg::noise::kThresholdAudible);
-    const std::string ghostLine = ghostEligible
-        ? "GHOST CLEAR READY (PEAK <= 30 -> x1.5 SHARDS)"
-        : ("PEAK NOISE: " + std::to_string(static_cast<int>(std::round(m_roomPeakNoise))) + "/100 (GHOST CLEAR LOST)");
-    m_ui.drawText(
-        win,
-        ghostLine,
-        {562.0f, 758.0f},
-        9.5f,
-        ghostEligible ? sf::Color(110, 231, 183) : sf::Color(148, 163, 184)
-    );
+    // Stage 1.5: Show why the player was detected (last noise cause + acoustic wave badge) when recent noise occurred
+    if (m_lastNoiseSourceTimer > 0.0f && m_lastNoiseAction != NoiseAction::SilenceDecay) {
+        char causeLine[96];
+        std::snprintf(
+            causeLine,
+            sizeof(causeLine),
+            "((o)) CAUSE: %s (+%.0f)",
+            noiseActionHudLabel(m_lastNoiseAction),
+            m_lastNoiseDelta
+        );
+        m_ui.drawText(
+            win,
+            causeLine,
+            {562.0f, 758.0f},
+            9.5f,
+            tierCol,
+            TextAlign::Left,
+            true
+        );
+    } else {
+        const bool ghostEligible = (m_roomPeakNoise <= cfg::noise::kThresholdAudible);
+        const std::string ghostLine = ghostEligible
+            ? "GHOST CLEAR READY (PEAK <= 30 -> x1.5 SHARDS)"
+            : ("PEAK NOISE: " + std::to_string(static_cast<int>(std::round(m_roomPeakNoise))) + "/100 (GHOST CLEAR LOST)");
+        m_ui.drawText(
+            win,
+            ghostLine,
+            {562.0f, 758.0f},
+            9.5f,
+            ghostEligible ? sf::Color(110, 231, 183) : sf::Color(148, 163, 184)
+        );
+    }
 
     // Bottom-right Acoustic Threat & Boss Bar Panel
     m_ui.drawPanel(win, {910.0f, 704.0f}, {352.0f, 82.0f}, sf::Color(6, 12, 24, 215), sf::Color(30, 58, 95, 190));
@@ -187,15 +290,18 @@ void Game::renderHud() {
         if (!e.isActive()) continue;
         ++activeEnemyCount;
         highestSuspicion = std::max(highestSuspicion, e.suspicion());
-        if (e.variant() == EnemyVariant::AbyssalBoss) {
+        if (e.variant() == EnemyVariant::AbyssalBoss || e.variant() == EnemyVariant::TheConductor) {
             bossPtr = &e;
         }
     }
 
     if (bossPtr != nullptr) {
+        const std::string bossTitle = (bossPtr->variant() == EnemyVariant::TheConductor)
+            ? (std::string("MINI-BOSS: THE CONDUCTOR [PHASE ") + (bossPtr->bossPhase() == 2 ? "II]" : "I]"))
+            : (std::string("BOSS: ") + bossArenaPhaseName(bossPtr->bossAcousticPhase()));
         m_ui.drawText(
             win,
-            std::string("BOSS: ") + bossArenaPhaseName(bossPtr->bossAcousticPhase()),
+            bossTitle,
             {924.0f, 714.0f},
             11.0f,
             sf::Color(244, 63, 94),
@@ -211,9 +317,11 @@ void Game::renderHud() {
             sf::Color(244, 63, 94),
             sf::Color(159, 18, 57, 230)
         );
-        const char* bossHint = (bossPtr->bossAcousticPhase() == BossArenaAcousticPhase::AbyssalSilence)
-            ? "PHASE III: BOUNCE RAYS OR USE HIGH FREQ [3] FOR 1.85X DMG!"
-            : "PING [LMB] & PULSE [SPACE] TO SHATTER";
+        const char* bossHint = (bossPtr->variant() == EnemyVariant::TheConductor)
+            ? "BOUNCE RAYS OR USE HIGH FREQ [3] FOR 1.65X RESONANCE DMG!"
+            : ((bossPtr->bossAcousticPhase() == BossArenaAcousticPhase::AbyssalSilence)
+                ? "PHASE III: BOUNCE RAYS OR USE HIGH FREQ [3] FOR 1.85X DMG!"
+                : "PING [LMB] & PULSE [SPACE] TO SHATTER");
         m_ui.drawText(
             win,
             bossHint,
@@ -250,6 +358,8 @@ void Game::renderHud() {
         m_ui.drawPanel(win, {250.0f, 88.0f}, {780.0f, 32.0f}, sf::Color(8, 22, 42, 225), sf::Color(56, 189, 248, 200));
         m_ui.drawText(win, m_statusBannerText, {640.0f, 97.0f}, 11.5f, sf::Color(186, 230, 253), TextAlign::Center, true);
     }
+
+    renderTutorialBanner();
 
     if (m_loreDisplayTimer > 0.0f) {
         m_ui.drawPanel(win, {240.0f, 608.0f}, {800.0f, 82.0f}, sf::Color(10, 20, 38, 235), sf::Color(56, 189, 248, 220), 2.0f);

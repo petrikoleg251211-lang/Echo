@@ -1,0 +1,95 @@
+name: EchoLabyrinth 5.4 Release Packaging (Windows ZIP/NSIS & Linux TGZ)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package-windows-x64:
+    name: Windows x64 Portable ZIP & NSIS Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure CMake (Release)
+        working-directory: cpp
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DECHO_AUTO_FETCH_SFML=ON
+
+      - name: Build EchoLabyrinth_SFML (Release)
+        working-directory: cpp
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Run 21-Suite Deterministic Self-Test
+        working-directory: cpp
+        run: .\build\Release\EchoLabyrinth_SFML.exe --self-test
+
+      - name: Run 1200-Frame Acoustic & AI Stress Benchmark
+        working-directory: cpp
+        run: .\build\Release\EchoLabyrinth_SFML.exe --benchmark 1200
+
+      - name: Run 1000-Run Monte Carlo Balance Report
+        working-directory: cpp
+        run: .\build\Release\EchoLabyrinth_SFML.exe --balance-report 1000
+
+      - name: Export 5-Track Original Soundtrack WAVs
+        working-directory: cpp
+        run: .\build\Release\EchoLabyrinth_SFML.exe --export-ost .\build\Release\assets\audio\music
+
+      - name: Package Portable ZIP via CPack
+        working-directory: cpp/build
+        run: cpack -G ZIP -C Release
+
+      - name: Upload Windows Portable Release Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoLabyrinth-5.4.0-win64-portable
+          path: cpp/build/EchoLabyrinth-*.zip
+
+  package-linux-x64:
+    name: Linux x64 Portable TGZ/ZIP & ASan Gate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install SFML 2.6 & OpenAL build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake g++ ninja-build \
+            libsfml-dev libopenal-dev \
+            libxrandr-dev libxcursor-dev libudev-dev \
+            libfreetype-dev libflac-dev libvorbis-dev \
+            libgl1-mesa-dev libegl1-mesa-dev
+
+      - name: Configure & Build Release Binary
+        working-directory: cpp
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DECHO_AUTO_FETCH_SFML=OFF
+          cmake --build build --parallel 4
+
+      - name: Run 21-Suite Self-Test, Benchmark & Balance Verification
+        working-directory: cpp
+        run: |
+          ./build/EchoLabyrinth_SFML --version
+          ./build/EchoLabyrinth_SFML --self-test
+          ./build/EchoLabyrinth_SFML --benchmark 1200
+          ./build/EchoLabyrinth_SFML --balance-report 1000
+
+      - name: Package Linux Release Archive via CPack
+        working-directory: cpp/build
+        run: cpack -G "TGZ;ZIP" -C Release
+
+      - name: Upload Linux Portable Release Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoLabyrinth-5.4.0-linux-x64-portable
+          path: |
+            cpp/build/EchoLabyrinth-*.tar.gz
+            cpp/build/EchoLabyrinth-*.zip

@@ -612,6 +612,104 @@ void AudioManager::stopAmbientDrone() {
     m_loopBossChoir.stop();
 }
 
+AdaptiveStemWeights AudioManager::computeAdaptiveStemWeights(
+    float dangerLevel0to1,
+    bool isPursuing,
+    bool isSanctumCheckpoint,
+    bool isBossChamber,
+    int bossPhase,
+    BiomeId biome
+) noexcept {
+    AdaptiveStemWeights w{};
+    const float clampedDanger = std::clamp(dangerLevel0to1, 0.0f, 1.0f);
+    w.bossChoir = isBossChamber ? 1.0f : 0.0f;
+    w.tensionStrings = std::clamp((clampedDanger - 0.12f) / 0.75f, 0.0f, 1.0f) * (isBossChamber ? 0.45f : 1.0f);
+    w.pursuitPercussion = isPursuing ? (isBossChamber ? 0.55f : 1.0f) : 0.0f;
+    w.sanctumPad = (!isBossChamber && isSanctumCheckpoint && !isPursuing && clampedDanger < 0.25f) ? 1.0f : 0.0f;
+    w.subDrone = std::clamp(1.0f - 0.55f * std::max(w.bossChoir, w.pursuitPercussion), 0.25f, 1.0f);
+
+    // Biome-specific Sonar Arp & DSP parameters (Low-Pass Cutoff Hz & Reverb Wet Mix)
+    switch (biome) {
+        case BiomeId::DrownedGalleries:
+            w.sonarArp = 0.48f;
+            w.lowPassCutoffHz = 2800.0f; // Underwater hydro-acoustic muffling
+            w.reverbWetMix = 0.42f;
+            break;
+        case BiomeId::CrystalVaults:
+            w.sonarArp = 0.82f;
+            w.lowPassCutoffHz = 16500.0f; // Crisp crystalline high-harmonic ring
+            w.reverbWetMix = 0.58f;
+            break;
+        case BiomeId::IronFoundry:
+            w.sonarArp = 0.60f;
+            w.lowPassCutoffHz = 9500.0f;  // Metallic industrial resonance
+            w.reverbWetMix = 0.46f;
+            break;
+        case BiomeId::LivingMycelium:
+        default:
+            w.sonarArp = 0.30f;
+            w.lowPassCutoffHz = 1850.0f;  // Heavy organic spore absorption
+            w.reverbWetMix = 0.14f;
+            break;
+    }
+
+    if (bossPhase >= 3) {
+        w.lowPassCutoffHz *= 0.75f;
+        w.reverbWetMix = std::min(0.75f, w.reverbWetMix + 0.18f);
+    }
+    return w;
+}
+
+void AudioManager::applyLowPassFilter(
+    std::vector<sf::Int16>& pcmSamples,
+    float cutoffHz,
+    unsigned int sampleRate
+) noexcept {
+    if (pcmSamples.empty() || sampleRate == 0) return;
+    const float clampedCutoff = std::clamp(cutoffHz, 80.0f, static_cast<float>(sampleRate) * 0.48f);
+    const float rc = 1.0f / (2.0f * kPi * clampedCutoff);
+    const float dt = 1.0f / static_cast<float>(sampleRate);
+    const float alpha = std::clamp(dt / (rc + dt), 0.005f, 1.0f);
+
+    float prev = static_cast<float>(pcmSamples[0]);
+    for (std::size_t i = 0; i < pcmSamples.size(); ++i) {
+        const float x = static_cast<float>(pcmSamples[i]);
+        prev = prev + alpha * (x - prev);
+        pcmSamples[i] = static_cast<sf::Int16>(std::clamp(prev, -32767.0f, 32767.0f));
+    }
+}
+
+void AudioManager::applyReverbTail(
+    std::vector<sf::Int16>& pcmSamples,
+    float delaySec,
+    float feedbackGain,
+    float wetMix,
+    unsigned int sampleRate
+) {
+    if (pcmSamples.empty() || sampleRate == 0) return;
+    const std::size_t delaySamples = std::max<std::size_t>(
+        64,
+        static_cast<std::size_t>(std::clamp(delaySec, 0.01f, 0.85f) * static_cast<float>(sampleRate))
+    );
+    const float fb = std::clamp(feedbackGain, 0.0f, 0.88f);
+    const float wet = std::clamp(wetMix, 0.0f, 0.85f);
+    const float dry = 1.0f - wet * 0.45f;
+
+    std::vector<float> combLine(delaySamples, 0.0f);
+    std::size_t cursor = 0;
+
+    for (std::size_t i = 0; i < pcmSamples.size(); ++i) {
+        const float inSample = static_cast<float>(pcmSamples[i]);
+        const float delayed = combLine[cursor];
+        const float nextVal = inSample + delayed * fb;
+        combLine[cursor] = nextVal;
+        cursor = (cursor + 1) % delaySamples;
+
+        const float mixed = inSample * dry + delayed * wet;
+        pcmSamples[i] = static_cast<sf::Int16>(std::clamp(mixed, -32767.0f, 32767.0f));
+    }
+}
+
 void AudioManager::updateAdaptiveAudio(
     float dt,
     float dangerLevel0to1,
@@ -622,20 +720,30 @@ void AudioManager::updateAdaptiveAudio(
     int bossPhase
 ) {
     m_currentBossPhase = std::clamp(bossPhase, 1, 3);
-
-    const float targetBoss = isBossChamber ? 1.0f : 0.0f;
-    const float targetTension = std::clamp((dangerLevel0to1 - 0.12f) / 0.75f, 0.0f, 1.0f)
-                              * (isBossChamber ? 0.45f : 1.0f);
-    const float targetPursuit = isPursuing ? (isBossChamber ? 0.55f : 1.0f) : 0.0f;
-    const float targetSanctum = (!isBossChamber && isSanctumCheckpoint && !isPursuing && dangerLevel0to1 < 0.25f)
-                              ? 1.0f
-                              : 0.0f;
+    const AdaptiveStemWeights targets = computeAdaptiveStemWeights(
+        dangerLevel0to1,
+        isPursuing,
+        isSanctumCheckpoint,
+        isBossChamber,
+        m_currentBossPhase,
+        m_currentBiome
+    );
 
     const float blendRate = std::min(1.0f, dt * 2.2f);
-    m_tensionBlend += (targetTension - m_tensionBlend) * blendRate;
-    m_pursuitBlend += (targetPursuit - m_pursuitBlend) * blendRate;
-    m_sanctumBlend += (targetSanctum - m_sanctumBlend) * blendRate;
-    m_bossBlend    += (targetBoss - m_bossBlend) * blendRate;
+    m_tensionBlend += (targets.tensionStrings - m_tensionBlend) * blendRate;
+    m_pursuitBlend += (targets.pursuitPercussion - m_pursuitBlend) * blendRate;
+    m_sanctumBlend += (targets.sanctumPad - m_sanctumBlend) * blendRate;
+    m_bossBlend    += (targets.bossChoir - m_bossBlend) * blendRate;
+
+    m_stemWeights.subDrone = targets.subDrone;
+    m_stemWeights.sonarArp += (targets.sonarArp - m_stemWeights.sonarArp) * blendRate;
+    m_stemWeights.tensionStrings = m_tensionBlend;
+    m_stemWeights.pursuitPercussion = m_pursuitBlend;
+    m_stemWeights.sanctumPad = m_sanctumBlend;
+    m_stemWeights.bossChoir = m_bossBlend;
+    m_stemWeights.lowPassCutoffHz = targets.lowPassCutoffHz;
+    m_stemWeights.reverbWetMix = targets.reverbWetMix;
+
     syncLoopLayerVolumes();
 
     if (dangerLevel0to1 > 0.15f) {

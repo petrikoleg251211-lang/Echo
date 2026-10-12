@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <radialGradient id="abyssBg" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#0b192c"/>
+      <stop offset="100%" stop-color="#030712"/>
+    </radialGradient>
+    <linearGradient id="sonarCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#c084fc"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="24" fill="url(#abyssBg)" stroke="#1e3a5f" stroke-width="3"/>
+  <!-- Concentric Sonar Wavefronts -->
+  <circle cx="64" cy="64" r="46" fill="none" stroke="url(#sonarCyan)" stroke-width="2.5" stroke-dasharray="10 6" opacity="0.55"/>
+  <circle cx="64" cy="64" r="34" fill="none" stroke="#38bdf8" stroke-width="2.5" opacity="0.80"/>
+  <circle cx="64" cy="64" r="21" fill="none" stroke="#34d399" stroke-width="2.2" opacity="0.90"/>
+  <!-- Directional Ping Cone -->
+  <path d="M64 64 L102 32 A50 50 0 0 1 102 96 Z" fill="#38bdf8" opacity="0.22"/>
+  <!-- Echo Crystal Core -->
+  <polygon points="64,46 78,64 64,82 50,64" fill="#38bdf8" stroke="#e0f2fe" stroke-width="2"/>
+  <circle cx="64" cy="64" r="4.5" fill="#f8fafc"/>
+</svg>

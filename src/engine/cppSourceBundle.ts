@@ -1,10 +1,14 @@
 import cmakeRaw from '../../cpp/CMakeLists.txt?raw';
+import licenseRaw from '../../cpp/LICENSE?raw';
 import readmeRaw from '../../cpp/README.md?raw';
 import changelogRaw from '../../cpp/CHANGELOG.md?raw';
 import clangFormatRaw from '../../cpp/.clang-format?raw';
 import batRaw from '../../cpp/build_windows.bat?raw';
+import winRcRaw from '../../cpp/resources/echolabyrinth.rc?raw';
 import ciWorkflowRaw from '../../.github/workflows/ci.yml?raw';
+import releaseWorkflowRaw from '../../.github/workflows/release.yml?raw';
 import manifestRaw from '../../cpp/assets/ASSET_MANIFEST.md?raw';
+import appIconSvgRaw from '../../cpp/assets/icon/echolabyrinth_icon.svg?raw';
 import surveyorObjRaw from '../../cpp/assets/models/surveyor_rig.obj?raw';
 import stalkerObjRaw from '../../cpp/assets/models/listener_stalker.obj?raw';
 import wardenObjRaw from '../../cpp/assets/models/listener_warden.obj?raw';
@@ -12,11 +16,13 @@ import crystalObjRaw from '../../cpp/assets/models/resonator_crystal.obj?raw';
 import leverObjRaw from '../../cpp/assets/models/harmonic_lever.obj?raw';
 import terminalObjRaw from '../../cpp/assets/models/surveyor_terminal.obj?raw';
 import turbineObjRaw from '../../cpp/assets/models/vent_turbine.obj?raw';
+import postFxFragRaw from '../../cpp/assets/shaders/acoustic_postfx.frag?raw';
 
 import configHppRaw from '../../cpp/include/Config.hpp?raw';
 import acousticHppRaw from '../../cpp/include/AcousticSystem.hpp?raw';
 import assetHppRaw from '../../cpp/include/AssetManager.hpp?raw';
 import audioHppRaw from '../../cpp/include/AudioManager.hpp?raw';
+import postProcessorHppRaw from '../../cpp/include/PostProcessor.hpp?raw';
 import uiHppRaw from '../../cpp/include/UiRenderer.hpp?raw';
 import saveHppRaw from '../../cpp/include/SaveSystem.hpp?raw';
 import labyrinthHppRaw from '../../cpp/include/Labyrinth.hpp?raw';
@@ -29,6 +35,7 @@ import acousticCppRaw from '../../cpp/src/AcousticSystem.cpp?raw';
 import assetCppRaw from '../../cpp/src/AssetManager.cpp?raw';
 import audioCppRaw from '../../cpp/src/AudioManager.cpp?raw';
 import soundtrackComposerCppRaw from '../../cpp/src/SoundtrackComposer.cpp?raw';
+import postProcessorCppRaw from '../../cpp/src/PostProcessor.cpp?raw';
 import uiCppRaw from '../../cpp/src/UiRenderer.cpp?raw';
 import saveCppRaw from '../../cpp/src/SaveSystem.cpp?raw';
 import labyrinthGenCppRaw from '../../cpp/src/LabyrinthGen.cpp?raw';
@@ -59,31 +66,49 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/CMakeLists.txt',
     module: 'Build',
-    summary: 'Скрипт збірки CMake 3.16+ (C++17, SFML 2.6.1 FetchContent, 23 модулі Stage 0-2 та опція ASan/UBSan)',
+    summary: 'Скрипт збірки CMake 3.16+ (C++17, SFML 2.6.1 FetchContent, 24 модулі, CPack ZIP/NSIS/TGZ та ASan/UBSan)',
     content: cmakeRaw,
+  },
+  {
+    path: 'cpp/LICENSE',
+    module: 'Docs',
+    summary: 'Двоконтурна ліцензія релізу: MIT License для C++17 коду та CC0 1.0 Public Domain для 3D/Аудіо/Шейдерів',
+    content: licenseRaw,
+  },
+  {
+    path: 'cpp/resources/echolabyrinth.rc',
+    module: 'Build',
+    summary: 'Windows Resource Script (.rc) із метаданими VS_VERSION_INFO (v5.4.0.0) для виконуваного файлу .exe',
+    content: winRcRaw,
   },
   {
     path: 'cpp/build_windows.bat',
     module: 'Build',
-    summary: 'Автоматичний скрипт збірки в 1 клік для Windows 10/11 (Visual Studio 2022 / MinGW + 19-suite --self-test)',
+    summary: 'Автоматичний скрипт збірки в 1 клік для Windows 10/11 (Visual Studio 2022 / MinGW + 21-suite --self-test)',
     content: batRaw,
   },
   {
     path: '.github/workflows/ci.yml',
     module: 'CI',
-    summary: 'GitHub Actions CI (Windows MSVC + Ubuntu GCC + ASan/UBSan + кеш FetchContent + артефакти + 19-suite --self-test)',
+    summary: 'GitHub Actions CI (Windows MSVC + Ubuntu GCC + ASan/UBSan + кеш FetchContent + артефакти + 21-suite --self-test)',
     content: ciWorkflowRaw,
+  },
+  {
+    path: '.github/workflows/release.yml',
+    module: 'CI',
+    summary: 'GitHub Actions Release Pipeline: автозбірка Windows ZIP/NSIS та Linux TGZ через CPack + --benchmark 1200 + --export-ost',
+    content: releaseWorkflowRaw,
   },
   {
     path: 'cpp/README.md',
     module: 'Docs',
-    summary: 'Повна документація EchoLabyrinth 5.2 "Resonance": Етапи 0-2, 4 біоми, 13 ворогів, 5 треків OST та 19-suite self-test',
+    summary: 'Повна документація EchoLabyrinth 5.4 "Resonance": Етапи 0-4, GLSL шейдери, 4 біоми, 13 ворогів, 6-stem аудіо та CPack реліз',
     content: readmeRaw,
   },
   {
     path: 'cpp/CHANGELOG.md',
     module: 'Docs',
-    summary: 'Історія версій проєкту EchoLabyrinth від v1.0 до v5.2.0 (Етап 0 + Етап 1 + Етап 2)',
+    summary: 'Історія версій проєкту EchoLabyrinth від v1.0 до v5.4.0 (Етап 0 + Етап 1 + Етап 2 + Етап 3 + Етап 4)',
     content: changelogRaw,
   },
   {
@@ -95,8 +120,20 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/assets/ASSET_MANIFEST.md',
     module: 'Asset3D',
-    summary: 'Реєстр усіх 3D-моделей (.obj), процедурних текстур матеріалів та 3D-аудіо з ліцензією CC0 1.0 Public Domain',
+    summary: 'Реєстр усіх 3D-моделей (.obj), GLSL шейдерів, процедурних текстур матеріалів та 3D-аудіо з ліцензією CC0 1.0 Public Domain',
     content: manifestRaw,
+  },
+  {
+    path: 'cpp/assets/icon/echolabyrinth_icon.svg',
+    module: 'Asset3D',
+    summary: 'Офіційна векторна іконка застосунку EchoLabyrinth 5.4 (концентричний сонарний приціл та кристал-резонатор)',
+    content: appIconSvgRaw,
+  },
+  {
+    path: 'cpp/assets/shaders/acoustic_postfx.frag',
+    module: 'Shader',
+    summary: 'GLSL #version 120 фрагментний шейдер пост-обробки: 9-tap Gaussian Bloom, хроматична аберація, UV-хвиля удару та CRT сканлайни',
+    content: postFxFragRaw,
   },
   {
     path: 'cpp/assets/models/surveyor_rig.obj',
@@ -143,13 +180,13 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/include/Config.hpp',
     module: 'Header',
-    summary: 'Централізовані константи v5.2: BalanceTable, 4 складності, 4 біоми, 7 матеріалів (EchoCrystal), 12 реліквій та 12 Codex',
+    summary: 'Централізовані константи v5.3: BalanceTable, 4 складності, 4 біоми, 7 матеріалів, 4 палітри дальтонізму та Closed Captions',
     content: configHppRaw,
   },
   {
     path: 'cpp/include/AcousticSystem.hpp',
     module: 'Header',
-    summary: 'Заголовок акустичного рушія: багатократні відбиття променів, розщеплення на EchoCrystal (1->3 промені) та Echo Trap',
+    summary: 'Заголовок акустичного рушія: багатократні відбиття, розщеплення EchoCrystal (1->3), палітри ColorblindMode та Echo Trap',
     content: acousticHppRaw,
   },
   {
@@ -161,8 +198,14 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/include/AudioManager.hpp',
     module: 'Header',
-    summary: 'Заголовок 3D-аудіорушія OpenAL та генератора 5 повноцінних композицій саундтреку (SoundtrackComposer)',
+    summary: 'Заголовок 3D-аудіорушія OpenAL, 6-стемового адаптивного кросфейду та процедурного Low-Pass / Schroeder Reverb DSP',
     content: audioHppRaw,
+  },
+  {
+    path: 'cpp/include/PostProcessor.hpp',
+    module: 'Header',
+    summary: 'Заголовок GLSL пост-процесора (sf::RenderTexture FBO + sf::Shader: Bloom, Chromatic Aberration, Shockwave UV, CRT Scanline)',
+    content: postProcessorHppRaw,
   },
   {
     path: 'cpp/include/UiRenderer.hpp',
@@ -173,7 +216,7 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/include/SaveSystem.hpp',
     module: 'Header',
-    summary: 'Заголовок атомарної системи збережень ELSV6 з перевіркою контрольної суми FNV-1a та міграцією V3/V4/V5 -> V6',
+    summary: 'Заголовок атомарної системи збережень ELSV6 (включно з налаштуваннями доступності Stage 3 та FNV-1a checksum)',
     content: saveHppRaw,
   },
   {
@@ -197,7 +240,7 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/include/Game.hpp',
     module: 'Header',
-    summary: 'Головний клас гри (Hit-Stop, 4 режими складності, 3-кімнатний туторіал, 4 біоми та 19 тест-сьютів)',
+    summary: 'Головний клас гри (Hit-Stop, GLSL PostProcessor, 4 палітри дальтонізму, Closed Captions, 4 біоми та 20 тест-сьютів)',
     content: gameHppRaw,
   },
   {
@@ -209,7 +252,7 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/src/AcousticSystem.cpp',
     module: 'Source',
-    summary: 'Реалізація рейкастингу, хаотичного розщеплення променів на EchoCrystal (1->3 промені), Glass shatter та Echo Trap',
+    summary: 'Реалізація рейкастингу, розщеплення променів на EchoCrystal (1->3), трансформації кольорів ColorblindMode та Echo Trap',
     content: acousticCppRaw,
   },
   {
@@ -221,7 +264,7 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/src/AudioManager.cpp',
     module: 'Source',
-    summary: 'OpenAL 3D просторове позиціонування звуків, синтез SFX та динамічне кросфейд-зведення саундтреку',
+    summary: 'OpenAL 3D просторове аудіо, 6-стемовий адаптивний кросфейд, біомний Low-Pass фільтр та реверберація Шредера',
     content: audioCppRaw,
   },
   {
@@ -229,6 +272,12 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
     module: 'Source',
     summary: 'Процедурний DSP-композитор 5 треків саундтреку (44.1 кГц стерео) та автоматичний експорт 16-bit WAV',
     content: soundtrackComposerCppRaw,
+  },
+  {
+    path: 'cpp/src/PostProcessor.cpp',
+    module: 'Source',
+    summary: 'Реалізація GLSL пост-обробки (Bloom, Chromatic Aberration, Shockwave UV, CRT Scanline) з CPU fallback для headless CI',
+    content: postProcessorCppRaw,
   },
   {
     path: 'cpp/src/UiRenderer.cpp',
@@ -239,7 +288,7 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/src/SaveSystem.cpp',
     module: 'Source',
-    summary: 'Реалізація атомарного запису збережень ELSV6 через .tmp файл, FNV-1a checksum та міграція V3/V4/V5 -> V6',
+    summary: 'Реалізація атомарного запису збережень ELSV6 (включно з colorblindMode, subtitles, shakeIntensity, reduceFlashes, postFx)',
     content: saveCppRaw,
   },
   {
@@ -293,50 +342,51 @@ export const CPP_SOURCE_FILES: CppSourceFile[] = [
   {
     path: 'cpp/src/Game.cpp',
     module: 'Source',
-    summary: 'Ядро ігрового циклу: Hit-Stop (30-60 мс), паровий молот Iron Foundry, хвилі води Drowned Galleries та взаємодія з ворогами',
+    summary: 'Ядро ігрового циклу: Hit-Stop, черга субтитрів звуків (Closed Captions), паровий молот Iron Foundry та взаємодія з ворогами',
     content: gameCppRaw,
   },
   {
     path: 'cpp/src/GameRun.cpp',
     module: 'Source',
-    summary: 'Модуль життєвого циклу забігу: 4 режими складності, 3-кімнатний туторіал, спавн хвиль та чекпоінти V6',
+    summary: 'Модуль життєвого циклу забігу: синхронізація біомного DSP аудіо, 4 режими складності, туторіал та чекпоінти V6',
     content: gameRunCppRaw,
   },
   {
     path: 'cpp/src/GameNoise.cpp',
     module: 'Source',
-    summary: 'Модуль шумової системи з правилами 4 біомів (приглушення кроків у воді, маскування молотом, поглинання міцелієм)',
+    summary: 'Модуль шумової системи з генерацією Closed Captions та запуском GLSL-хвилі спотворення (Shockwave UV)',
     content: gameNoiseCppRaw,
   },
   {
     path: 'cpp/src/GameInput.cpp',
     module: 'Source',
-    summary: 'Модуль обробки клавіатури/миші, скидання Leech через Radial Pulse [Space] та перемикання складності',
+    summary: 'Модуль обробки клавіатури/миші та гарячих клавіш доступності ([F6] Дальтонізм, [F7] Субтитри, [F8] GLSL Post-FX)',
     content: gameInputCppRaw,
   },
   {
     path: 'cpp/src/GameWorldRender.cpp',
     module: 'Source',
-    summary: 'Модуль 2.5D рендерингу світу, біолюмінесцентних спор Living Mycelium та ударної хвилі молота Iron Foundry',
+    summary: 'Модуль 2.5D рендерингу світу крізь GLSL PostProcessor (Bloom, Chromatic Aberration, Shockwave UV, CRT Scanline)',
     content: gameWorldRenderCppRaw,
   },
   {
     path: 'cpp/src/GameHudRender.cpp',
     module: 'Source',
-    summary: 'Модуль HUD: хвильовий індикатор шуму з причиною, стрілки загрози, бейдж біому, банер туторіалу та шкала The Conductor',
+    summary: 'Модуль HUD: панель візуальних субтитрів звуків ([DIR] + відстань), хвильовий індикатор шуму, стрілки загрози та меню доступності',
     content: gameHudRenderCppRaw,
   },
   {
     path: 'cpp/src/GameBalance.cpp',
     module: 'Source',
-    summary: 'Модуль безголової симуляції 1000 пробігів бота (--balance-report), звіту Top-5 реліквій та тестів Stage 1 (Suite 18) і Stage 2 (Suite 19)',
+    summary: 'Модуль симуляції 1000 пробігів бота (--balance-report) та верифікаційних наборів Stage 1 (Suite 18), Stage 2 (Suite 19) і Stage 3 (Suite 20)',
     content: gameBalanceCppRaw,
   },
   {
     path: 'cpp/src/GameSelfTest.cpp',
     module: 'Source',
-    summary: 'Головний раннер автоматичної верифікації: усі 19 детермінованих наборів тестів --self-test (Stage 0 + Stage 1 + Stage 2)',
+    summary: 'Головний раннер автоматичної верифікації: усі 20 детермінованих наборів тестів --self-test (Stage 0 + Stage 1 + Stage 2 + Stage 3)',
     content: gameSelfTestCppRaw,
   },
 ];
+
 

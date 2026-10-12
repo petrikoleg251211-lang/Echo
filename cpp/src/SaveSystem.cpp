@@ -54,6 +54,11 @@ std::uint32_t SaveSystem::computeChecksum(const SaveData& data) noexcept {
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.difficulty, 0, 3)));
     hashMix(h, data.tutorialDone ? 1u : 0u);
     hashMix(h, static_cast<std::uint32_t>(std::clamp(data.playerMaxHealth, 1, 20)));
+    hashMix(h, static_cast<std::uint32_t>(std::clamp(data.colorblindMode, 0, 3)));
+    hashMix(h, data.subtitlesEnabled ? 1u : 0u);
+    hashMix(h, static_cast<std::uint32_t>(std::round(sanitizeFloat(data.shakeIntensityScale, 0.0f, 1.0f, 1.0f) * 100.0f)));
+    hashMix(h, data.reduceFlashes ? 1u : 0u);
+    hashMix(h, data.postFxEnabled ? 1u : 0u);
     return h;
 }
 
@@ -97,6 +102,8 @@ bool SaveSystem::saveToFile(const std::string& filePath, const SaveData& rawData
     data.maxReflections = std::clamp(data.maxReflections, 1, 8);
     data.ambientVisibility = sanitizeFloat(data.ambientVisibility, 0.0f, 0.25f, 0.03f);
     data.runTimeSec = sanitizeFloat(data.runTimeSec, 0.0f, 999999.0f, 0.0f);
+    data.colorblindMode = std::clamp(data.colorblindMode, 0, 3);
+    data.shakeIntensityScale = sanitizeFloat(data.shakeIntensityScale, 0.0f, 1.0f, 1.0f);
     data.totalRuns = std::clamp(data.totalRuns, 1, 99999);
     data.totalVictories = std::clamp(data.totalVictories, 0, 9999);
     data.bossesDefeated = std::clamp(data.bossesDefeated, 0, 9999);
@@ -127,6 +134,11 @@ bool SaveSystem::saveToFile(const std::string& filePath, const SaveData& rawData
         out << "bounces " << data.maxReflections << "\n";
         out << "darkness " << data.ambientVisibility << "\n";
         out << "runtime " << data.runTimeSec << "\n";
+        out << "accessibility " << data.colorblindMode << " "
+            << (data.subtitlesEnabled ? 1 : 0) << " "
+            << data.shakeIntensityScale << " "
+            << (data.reduceFlashes ? 1 : 0) << " "
+            << (data.postFxEnabled ? 1 : 0) << "\n";
         out << "meta " << data.totalRuns << " " << data.totalVictories << " " << data.bossesDefeated << " " << data.metaTotalGhostClears << "\n";
 
         out << "switches";
@@ -303,6 +315,16 @@ bool SaveSystem::loadFromFile(const std::string& filePath, SaveData& outData) {
             float rt = 0.0f;
             if (iss >> rt) {
                 parsed.runTimeSec = sanitizeFloat(rt, 0.0f, 999999.0f, 0.0f);
+            }
+        } else if (key == "accessibility") {
+            int cb = 0, sub = 1, rf = 0, pfx = 1;
+            float shk = 1.0f;
+            if (iss >> cb >> sub >> shk >> rf >> pfx) {
+                parsed.colorblindMode = std::clamp(cb, 0, 3);
+                parsed.subtitlesEnabled = (sub != 0);
+                parsed.shakeIntensityScale = sanitizeFloat(shk, 0.0f, 1.0f, 1.0f);
+                parsed.reduceFlashes = (rf != 0);
+                parsed.postFxEnabled = (pfx != 0);
             }
         } else if (key == "meta") {
             int tr = 1, tv = 0, bd = 0, mgc = 0;

@@ -87,6 +87,9 @@ void Game::enterRoom(int roomId, sf::Vector2f spawnPos, bool preservePlayerBuild
     }
 
     auto& room = m_labyrinth.currentRoomMut();
+    if (m_audio) {
+        m_audio->setCurrentBiome(room.biome);
+    }
     m_currentWaveIndex = 0;
     m_roomPeakNoise = 0.0f;
     m_noiseIntrusionCooldown = 4.0f;
@@ -166,11 +169,14 @@ void Game::startNewGame(std::uint32_t customSeed) {
     m_foundryHammerTimer = 0.0f;
     m_foundryHammerMaskTimer = 0.0f;
     m_leechSprintDetachTimer = 0.0f;
+    m_postFxShockwaveTimer = 0.0f;
+    m_soundCaptions.clear();
     m_runTimeSec = 0.0f;
     m_loreDisplayTimer = 0.0f;
     m_showMinimap = false;
     m_acoustics.setMaxReflections(cfg::kDefaultMaxReflections);
     m_acoustics.setActiveFrequency(AcousticFrequency::Mid);
+    m_acoustics.setColorblindMode(m_colorblindMode);
 
     // Stage 1.4: Initialize 3-room onboarding tutorial on first run if not yet completed
     if (!m_tutorialDone) {
@@ -220,6 +226,11 @@ void Game::saveCheckpoint() {
     data.maxReflections = static_cast<int>(m_acoustics.maxReflections());
     data.ambientVisibility = m_ambientVisibility;
     data.runTimeSec = m_runTimeSec;
+    data.colorblindMode = static_cast<int>(m_colorblindMode);
+    data.subtitlesEnabled = m_subtitlesEnabled;
+    data.shakeIntensityScale = m_shakeIntensityScale;
+    data.reduceFlashes = m_reduceFlashes;
+    data.postFxEnabled = m_postFxEnabled;
 
     data.totalRuns = m_metaTotalRuns;
     data.totalVictories = m_metaTotalVictories;
@@ -261,6 +272,11 @@ bool Game::loadCheckpoint() {
     m_acoustics.setMaxReflections(static_cast<std::uint8_t>(data.maxReflections));
     m_ambientVisibility = data.ambientVisibility;
     m_runTimeSec = data.runTimeSec;
+    setColorblindMode(static_cast<ColorblindMode>(std::clamp(data.colorblindMode, 0, 3)));
+    m_subtitlesEnabled = data.subtitlesEnabled;
+    m_shakeIntensityScale = std::clamp(data.shakeIntensityScale, 0.0f, 1.0f);
+    m_reduceFlashes = data.reduceFlashes;
+    setPostFxEnabled(data.postFxEnabled);
     m_metaTotalRuns = data.totalRuns;
     m_metaTotalVictories = data.totalVictories;
     m_metaBossesDefeated = data.bossesDefeated;

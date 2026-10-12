@@ -66,6 +66,34 @@ void Game::registerNoiseAction(NoiseAction action, float dt, sf::Vector2f stimul
         m_lastNoiseSourceTimer = 3.2f;
     }
 
+    // Stage 3: Trigger GLSL radial shockwave distortion & closed-caption subtitles on major acoustic pulses
+    if (action == NoiseAction::RadialPulse ||
+        action == NoiseAction::StompImpact ||
+        action == NoiseAction::GlassShatter ||
+        action == NoiseAction::BossDissonanceShock ||
+        action == NoiseAction::BansheeWail) {
+        m_postFxShockwaveTimer = 0.55f;
+        m_postFxShockwaveOrigin = stimulusOrigin;
+    }
+
+    if (action == NoiseAction::RadialPulse) {
+        pushSoundCaption("RADIAL SONAR PULSE (+30 NOISE)", stimulusOrigin, sf::Color(56, 189, 248));
+    } else if (action == NoiseAction::StompImpact) {
+        pushSoundCaption("SEISMIC STOMP SHOCKWAVE (+35 NOISE)", stimulusOrigin, sf::Color(251, 146, 60));
+    } else if (action == NoiseAction::GlassShatter) {
+        pushSoundCaption("BRITTLE GLASS SHATTERED (+40 NOISE)", stimulusOrigin, sf::Color(244, 63, 94));
+    } else if (action == NoiseAction::DecoyImpact) {
+        pushSoundCaption("DECOY STONE IMPACT (+15 NOISE)", stimulusOrigin, sf::Color(167, 139, 250));
+    } else if (action == NoiseAction::WaterSplash) {
+        pushSoundCaption("HYDRO-ACOUSTIC WATER SPLASH (+15 NOISE)", stimulusOrigin, sf::Color(56, 189, 248));
+    } else if (action == NoiseAction::BansheeWail) {
+        pushSoundCaption("PIERCING BANSHEE WAIL (+22 NOISE)", stimulusOrigin, sf::Color(244, 63, 94));
+    } else if (action == NoiseAction::LeechDrain) {
+        pushSoundCaption("ACOUSTIC LEECH PARASITIC DRAIN (+8 NOISE)", stimulusOrigin, sf::Color(250, 204, 21));
+    } else if (action == NoiseAction::BossDissonanceShock) {
+        pushSoundCaption("CHOIR SOVEREIGN DISSONANCE SHOCKWAVE (+15 NOISE)", stimulusOrigin, sf::Color(244, 63, 94));
+    }
+
     if (action == NoiseAction::DirectionalPing ||
         action == NoiseAction::RadialPulse ||
         action == NoiseAction::DecoyImpact ||

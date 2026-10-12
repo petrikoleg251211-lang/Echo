@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(EchoLabyrinth_SFML VERSION 5.1.0 LANGUAGES CXX)
+project(EchoLabyrinth_SFML VERSION 5.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,6 +37,7 @@ set(ECHO_HEADERS
     include/AcousticSystem.hpp
     include/AssetManager.hpp
     include/AudioManager.hpp
+    include/PostProcessor.hpp
     include/UiRenderer.hpp
     include/SaveSystem.hpp
     include/Labyrinth.hpp
@@ -51,6 +52,7 @@ set(ECHO_SOURCES
     src/AssetManager.cpp
     src/AudioManager.cpp
     src/SoundtrackComposer.cpp
+    src/PostProcessor.cpp
     src/UiRenderer.cpp
     src/SaveSystem.cpp
     src/LabyrinthGen.cpp
@@ -70,6 +72,10 @@ set(ECHO_SOURCES
     src/GameBalance.cpp
     src/GameSelfTest.cpp
 )
+
+if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/echolabyrinth.rc")
+    list(APPEND ECHO_SOURCES resources/echolabyrinth.rc)
+endif()
 
 add_executable(EchoLabyrinth_SFML ${ECHO_SOURCES} ${ECHO_HEADERS})
 
@@ -93,13 +99,13 @@ target_link_libraries(EchoLabyrinth_SFML PRIVATE
     sfml-system
 )
 
-# Copy 3D Wavefront OBJ models and ASSET_MANIFEST.md next to the built executable
+# Copy 3D Wavefront OBJ models, GLSL shaders, icon, and ASSET_MANIFEST.md next to the built executable
 add_custom_command(TARGET EchoLabyrinth_SFML POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:EchoLabyrinth_SFML>/assets"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets"
         "$<TARGET_FILE_DIR:EchoLabyrinth_SFML>/assets"
-    COMMENT "Copying EchoLabyrinth 3D models & asset manifest to output directory..."
+    COMMENT "Copying EchoLabyrinth 3D models, GLSL shaders & asset manifest to output directory..."
 )
 
 # On Windows, copy runtime DLLs (SFML + OpenAL32) next to the .exe so it runs standalone
@@ -123,6 +129,33 @@ if(WIN32)
                     "${OPENAL_DLL_PATH}"
                     "$<TARGET_FILE_DIR:EchoLabyrinth_SFML>"
             )
+            install(FILES "${OPENAL_DLL_PATH}" DESTINATION .)
         endif()
     endif()
 endif()
+
+# Stage 4: CPack Portable Release & Installer Packaging (ZIP / NSIS / TGZ)
+install(TARGETS EchoLabyrinth_SFML RUNTIME DESTINATION .)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets" DESTINATION .)
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+    DESTINATION .
+)
+
+set(CPACK_PACKAGE_NAME "EchoLabyrinth")
+set(CPACK_PACKAGE_VENDOR "Subterranean Survey Corps")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "EchoLabyrinth 5.4 'Resonance' — Acoustic Roguelike Horror (C++17 / SFML)")
+set(CPACK_PACKAGE_VERSION_MAJOR 5)
+set(CPACK_PACKAGE_VERSION_MINOR 4)
+set(CPACK_PACKAGE_VERSION_PATCH 0)
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP;NSIS")
+else()
+    set(CPACK_GENERATOR "ZIP;TGZ")
+endif()
+include(CPack)
+

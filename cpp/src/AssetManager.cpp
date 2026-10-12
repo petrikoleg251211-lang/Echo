@@ -413,4 +413,74 @@ void AssetManager::renderMesh25D(
     target.draw(wire);
 }
 
+sf::Image AssetManager::generateWindowIconImage() {
+    constexpr unsigned int kIconSize = 64;
+    sf::Image icon;
+    icon.create(kIconSize, kIconSize, sf::Color(4, 9, 18, 255));
+
+    const float cx = 31.5f;
+    const float cy = 31.5f;
+
+    for (unsigned int y = 0; y < kIconSize; ++y) {
+        for (unsigned int x = 0; x < kIconSize; ++x) {
+            const float dx = static_cast<float>(x) - cx;
+            const float dy = static_cast<float>(y) - cy;
+            const float r = std::sqrt(dx * dx + dy * dy);
+            const float angle = std::atan2(dy, dx);
+
+            // Rounded outer badge mask
+            if (r > 30.8f) {
+                icon.setPixel(x, y, sf::Color(0, 0, 0, 0));
+                continue;
+            }
+
+            // Deep abyssal gradient background
+            float R = 6.0f + (1.0f - r / 31.0f) * 14.0f;
+            float G = 14.0f + (1.0f - r / 31.0f) * 28.0f;
+            float B = 28.0f + (1.0f - r / 31.0f) * 44.0f;
+
+            // Directional East sonar cone (-38 deg .. +38 deg)
+            if (std::abs(angle) < 0.66f && r < 27.5f) {
+                const float coneFade = (1.0f - std::abs(angle) / 0.66f) * (1.0f - r / 28.0f);
+                R += 56.0f * coneFade * 0.45f;
+                G += 189.0f * coneFade * 0.45f;
+                B += 248.0f * coneFade * 0.45f;
+            }
+
+            // Concentric sonar rings (r = 11, 19, 26) and outer rim (r = 29.5)
+            const float ring1 = std::max(0.0f, 1.0f - std::abs(r - 11.0f) * 1.15f);
+            const float ring2 = std::max(0.0f, 1.0f - std::abs(r - 19.0f) * 1.10f);
+            const float ring3 = std::max(0.0f, 1.0f - std::abs(r - 26.0f) * 1.10f);
+            const float rim   = std::max(0.0f, 1.0f - std::abs(r - 29.5f) * 1.25f);
+
+            // Inner emerald ring, mid cyan ring, outer EchoCrystal violet ring
+            R += ring1 * 52.0f  + ring2 * 56.0f  + ring3 * 192.0f + rim * 38.0f;
+            G += ring1 * 211.0f + ring2 * 189.0f + ring3 * 132.0f + rim * 92.0f;
+            B += ring1 * 153.0f + ring2 * 248.0f + ring3 * 252.0f + rim * 145.0f;
+
+            // Central diamond crystal core (|dx| + |dy| <= 6.5)
+            const float manhattan = std::abs(dx) + std::abs(dy);
+            if (manhattan <= 6.5f) {
+                const float coreT = 1.0f - (manhattan / 6.5f);
+                R = std::max(R, 125.0f + coreT * 130.0f);
+                G = std::max(G, 211.0f + coreT * 44.0f);
+                B = std::max(B, 252.0f);
+            }
+
+            icon.setPixel(
+                x,
+                y,
+                sf::Color(
+                    static_cast<sf::Uint8>(std::clamp(R, 0.0f, 255.0f)),
+                    static_cast<sf::Uint8>(std::clamp(G, 0.0f, 255.0f)),
+                    static_cast<sf::Uint8>(std::clamp(B, 0.0f, 255.0f)),
+                    255
+                )
+            );
+        }
+    }
+
+    return icon;
+}
+
 } // namespace echo

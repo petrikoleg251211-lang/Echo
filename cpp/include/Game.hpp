@@ -7,6 +7,7 @@
 #include "EnemyAI.hpp"
 #include "Labyrinth.hpp"
 #include "Player.hpp"
+#include "PostProcessor.hpp"
 #include "SaveSystem.hpp"
 #include "UiRenderer.hpp"
 
@@ -47,6 +48,16 @@ struct BalanceReportSummary {
     std::array<int, static_cast<std::size_t>(RelicId::Count)> relicWins{};
 };
 
+struct BenchmarkReportSummary {
+    int totalFrames{1200};
+    float totalElapsedMs{0.0f};
+    float avgFrameMs{0.0f};
+    float p99FrameMs{0.0f};
+    float estimatedFps{0.0f};
+    std::size_t peakActiveRays{0};
+    int crystalSplitsTriggered{0};
+};
+
 class Game {
 public:
     explicit Game(const std::string& exeDir = "");
@@ -61,6 +72,19 @@ public:
 
     // Stage 2 Verification Suite (4 Biomes, EchoCrystal Ray Split, Leech, Banshee, TuningForkConstruct, Room 16 Conductor)
     static int runStage2SelfTest(const std::string& exeDir = "");
+
+    // Stage 3 Verification Suite (GLSL PostFX Shaders, 6-Stem Adaptive Audio + Low-Pass/Reverb DSP, 4 Colorblind Modes, Closed Captions)
+    static int runStage3SelfTest(const std::string& exeDir = "");
+
+    // Stage 4 Verification Suite (Procedural 64x64 Window Icon, --benchmark 1200-Frame Stress Test, Release Asset & CPack Manifest Integrity)
+    static int runStage4SelfTest(const std::string& exeDir = "");
+
+    // Stage 4: Runs a deterministic high-load acoustic/AI/shader benchmark and prints frame-time telemetry
+    static BenchmarkReportSummary runBenchmark(
+        std::ostream& out,
+        int numFrames = 1200,
+        const std::string& exeDir = ""
+    );
 
     // Stage 1.2: Simulates 1000 headless bot runs and prints balance statistics & Top-5 relics
     static BalanceReportSummary simulateBalanceRuns(
@@ -86,6 +110,34 @@ public:
     float lastNoiseDelta() const noexcept { return m_lastNoiseDelta; }
     bool isFoundryHammerMaskingActive() const noexcept { return m_foundryHammerMaskTimer > 0.0f; }
 
+    // Stage 3: Accessibility & Post-Processing Controls
+    void setColorblindMode(ColorblindMode mode) noexcept;
+    ColorblindMode colorblindMode() const noexcept { return m_colorblindMode; }
+    void cycleColorblindMode() noexcept;
+
+    void setSubtitlesEnabled(bool enabled) noexcept { m_subtitlesEnabled = enabled; }
+    bool areSubtitlesEnabled() const noexcept { return m_subtitlesEnabled; }
+
+    void setShakeIntensityScale(float scale0to1) noexcept { m_shakeIntensityScale = std::clamp(scale0to1, 0.0f, 1.0f); }
+    float shakeIntensityScale() const noexcept { return m_shakeIntensityScale; }
+
+    void setReduceFlashes(bool reduce) noexcept { m_reduceFlashes = reduce; }
+    bool reduceFlashes() const noexcept { return m_reduceFlashes; }
+
+    void setPostFxEnabled(bool enabled) noexcept {
+        m_postFxEnabled = enabled;
+        m_postProcessor.setEnabled(enabled);
+    }
+    bool isPostFxEnabled() const noexcept { return m_postFxEnabled; }
+
+    void pushSoundCaption(
+        const std::string& description,
+        sf::Vector2f origin,
+        sf::Color color = sf::Color(125, 211, 252),
+        float durationSec = 2.8f
+    );
+    const std::vector<SoundCaptionEvent>& activeSoundCaptions() const noexcept { return m_soundCaptions; }
+
 private:
     // Input & Menu Navigation (GameInput.cpp)
     void handleEvents();
@@ -108,16 +160,17 @@ private:
 
     // World Rendering (GameWorldRender.cpp)
     void render();
-    void renderWorld();
-    void renderSubterraneanProps();
-    void renderInteractiveObjects();
-    void renderVignetteAndDust();
+    void renderWorld(sf::RenderTarget& target);
+    void renderSubterraneanProps(sf::RenderTarget& target);
+    void renderInteractiveObjects(sf::RenderTarget& target);
+    void renderVignetteAndDust(sf::RenderTarget& target);
 
-    // HUD, Wave Noise Meter, Threat Arrows, Tutorial & Overlays (GameHudRender.cpp)
+    // HUD, Wave Noise Meter, Threat Arrows, Tutorial, Closed Captions & Overlays (GameHudRender.cpp)
     void renderHud();
     void renderNoiseWaveMeter(sf::Vector2f topLeft, sf::Vector2f size);
     void renderThreatDirectionIndicators();
     void renderTutorialBanner();
+    void renderSoundCaptions();
     void renderCornerMinimap();
     void renderMinimapOverlay();
     void renderMenuOverlay();
@@ -143,6 +196,7 @@ private:
     AssetManager m_assets;
     AcousticSystem m_acoustics;
     std::unique_ptr<AudioManager> m_audio;
+    PostProcessor m_postProcessor;
     UiRenderer m_ui;
     Labyrinth m_labyrinth;
     Player m_player;
@@ -202,6 +256,16 @@ private:
     float m_leechSprintDetachTimer{0.0f};
     int m_metaTotalGhostClears{0};
     std::vector<int> m_discoveredCodexIds;
+
+    // Stage 3: Accessibility & PostFX State
+    ColorblindMode m_colorblindMode{ColorblindMode::Normal};
+    bool m_subtitlesEnabled{true};
+    float m_shakeIntensityScale{1.0f};
+    bool m_reduceFlashes{false};
+    bool m_postFxEnabled{true};
+    float m_postFxShockwaveTimer{0.0f};
+    sf::Vector2f m_postFxShockwaveOrigin{640.0f, 400.0f};
+    std::vector<SoundCaptionEvent> m_soundCaptions;
 
     // Roguelike Run & Meta-Progression Counters
     int m_enemiesDisruptedThisRun{0};

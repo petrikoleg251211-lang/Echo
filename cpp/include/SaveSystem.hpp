@@ -26,7 +26,7 @@ struct SaveData {
     int difficulty{1};
     bool tutorialDone{false};
 
-    // Audio & Graphics Settings
+    // Audio, PostFX & Accessibility Settings (Stage 3)
     float masterVolume{80.0f};
     float musicVolume{75.0f};
     float sfxVolume{85.0f};
@@ -35,6 +35,11 @@ struct SaveData {
     int maxReflections{3};
     float ambientVisibility{0.03f};
     float runTimeSec{0.0f};
+    int colorblindMode{0};           // 0=Normal, 1=Deuteranopia, 2=Protanopia, 3=Tritanopia
+    bool subtitlesEnabled{true};     // Directional visual sound subtitles / closed captions
+    float shakeIntensityScale{1.0f}; // Camera shake multiplier [0.0 .. 1.0]
+    bool reduceFlashes{false};       // Photosensitivity flash & chromatic aberration reduction
+    bool postFxEnabled{true};        // GLSL Bloom, Chromatic Aberration & CRT Scanline shader pipeline
 
     // Persistent Meta-Progression Across Runs
     int totalRuns{1};

@@ -872,23 +872,37 @@ int Game::runSelfTest(const std::string& exeDir) {
             return 1;
         }
     }
-    std::cout << "[SelfTest] PASS [17/19]: Block 5 (RoomEvents, 12 Relics, 12 Codex logs, Boss Arena Phases, 5-Track OST, & Save V5+V4 compat) verified.\n";
+    std::cout << "[SelfTest] PASS [17/21]: Block 5 (RoomEvents, 12 Relics, 12 Codex logs, Boss Arena Phases, 5-Track OST, & Save V5+V4 compat) verified.\n";
 
     // 18. STAGE 1 GAMEPLAY QUALITY SUITE (Hit-Stop, Telegraphing, 4 Difficulties, 3-Room Tutorial, Save V6, & 1000-Run Balance Report)
     if (runStage1SelfTest(exeDir) != 0) {
-        std::cerr << "[SelfTest] FAIL: Stage 1 Gameplay Quality suite [18/19] failed.\n";
+        std::cerr << "[SelfTest] FAIL: Stage 1 Gameplay Quality suite [18/21] failed.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [18/19]: Stage 1 Gameplay Quality (Hit-Stop, Telegraphing, 4 Difficulties, 3-Room Tutorial, Save V6, & --balance-report) verified.\n";
+    std::cout << "[SelfTest] PASS [18/21]: Stage 1 Gameplay Quality (Hit-Stop, Telegraphing, 4 Difficulties, 3-Room Tutorial, Save V6, & --balance-report) verified.\n";
 
     // 19. STAGE 2 CONTENT & BIOMES SUITE (4 Biomes, EchoCrystal Ray Splitting, Leech, Banshee, TuningForkConstruct, & Room 16 Mini-Boss The Conductor)
     if (runStage2SelfTest(exeDir) != 0) {
-        std::cerr << "[SelfTest] FAIL: Stage 2 Content & Biomes suite [19/19] failed.\n";
+        std::cerr << "[SelfTest] FAIL: Stage 2 Content & Biomes suite [19/21] failed.\n";
         return 1;
     }
-    std::cout << "[SelfTest] PASS [19/19]: Stage 2 Content & Biomes (4 Biomes, EchoCrystal Ray Splitting, Leech, Banshee, TuningForkConstruct, & The Conductor) verified.\n";
+    std::cout << "[SelfTest] PASS [19/21]: Stage 2 Content & Biomes (4 Biomes, EchoCrystal Ray Splitting, Leech, Banshee, TuningForkConstruct, & The Conductor) verified.\n";
 
-    std::cout << "[SelfTest] ALL 19 ECHOLABYRINTH 5.0 (STAGE 0 + STAGE 1 + STAGE 2) NATIVE C++17 VERIFICATION SUITES PASSED SUCCESSFULLY.\n";
+    // 20. STAGE 3 VISUALS, GLSL SHADERS, 6-STEM ADAPTIVE AUDIO DSP, & ACCESSIBILITY SUITE
+    if (runStage3SelfTest(exeDir) != 0) {
+        std::cerr << "[SelfTest] FAIL: Stage 3 Visuals, Audio DSP & Accessibility suite [20/21] failed.\n";
+        return 1;
+    }
+    std::cout << "[SelfTest] PASS [20/21]: Stage 3 Visuals, GLSL PostFX Shaders, 6-Stem Audio + LowPass/Reverb DSP, 4 Colorblind Modes, & Closed Captions verified.\n";
+
+    // 21. STAGE 4 RELEASE, PACKAGING, WINDOW ICON & STRESS BENCHMARK SUITE
+    if (runStage4SelfTest(exeDir) != 0) {
+        std::cerr << "[SelfTest] FAIL: Stage 4 Release, Packaging & Stress Benchmark suite [21/21] failed.\n";
+        return 1;
+    }
+    std::cout << "[SelfTest] PASS [21/21]: Stage 4 Release Packaging (64x64 Window Icon, --benchmark 60+ FPS Stress Test, OST & CPack Manifest) verified.\n";
+
+    std::cout << "[SelfTest] ALL 21 ECHOLABYRINTH 5.4 (STAGE 0 + STAGE 1 + STAGE 2 + STAGE 3 + STAGE 4) NATIVE C++17 VERIFICATION SUITES PASSED SUCCESSFULLY.\n";
     return 0;
 }
 

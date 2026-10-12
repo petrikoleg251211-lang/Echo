@@ -625,6 +625,116 @@ struct RelicSpec {
 RelicSpec getRelicSpec(RelicId id) noexcept;
 RelicId getPedestalRelicFromPool(std::size_t index) noexcept;
 
+// Stage 3: Accessibility — 4 Colorblind Palettes
+enum class ColorblindMode : std::uint8_t {
+    Normal = 0,       // Default cold cyan / emerald / magenta / crimson palette
+    Deuteranopia = 1, // Red-Green safe (Cobalt Blue / Warm Amber / Crisp White / Violet)
+    Protanopia = 2,   // Red-weak safe (Sky Cyan / Bright Gold / Magenta / Ivory)
+    Tritanopia = 3    // Blue-Yellow safe (Teal / Coral Crimson / Lavender / Mint)
+};
+
+inline constexpr const char* colorblindModeName(ColorblindMode mode) noexcept {
+    switch (mode) {
+        case ColorblindMode::Normal:       return "NORMAL (DEFAULT)";
+        case ColorblindMode::Deuteranopia: return "DEUTERANOPIA (BLUE / AMBER)";
+        case ColorblindMode::Protanopia:   return "PROTANOPIA (CYAN / GOLD)";
+        case ColorblindMode::Tritanopia:   return "TRITANOPIA (TEAL / CORAL)";
+    }
+    return "NORMAL (DEFAULT)";
+}
+
+inline sf::Color applyColorblindTransform(sf::Color c, ColorblindMode mode) noexcept {
+    if (mode == ColorblindMode::Normal) return c;
+    const float r = static_cast<float>(c.r);
+    const float g = static_cast<float>(c.g);
+    const float b = static_cast<float>(c.b);
+
+    float nr = r, ng = g, nb = b;
+    if (mode == ColorblindMode::Deuteranopia) {
+        // Map reds/oranges toward warm gold-amber and greens/teals toward distinct cobalt/sky blue
+        if (r > g * 1.35f && r > b * 1.2f) {
+            nr = std::min(255.0f, r * 1.05f);
+            ng = std::min(255.0f, r * 0.72f + g * 0.25f);
+            nb = std::min(255.0f, b * 0.25f + 20.0f);
+        } else if (g > r * 1.15f) {
+            nr = std::min(255.0f, r * 0.55f + 35.0f);
+            ng = std::min(255.0f, g * 0.78f + 30.0f);
+            nb = std::min(255.0f, std::max(b, g) * 1.12f);
+        } else {
+            nr = std::min(255.0f, r * 0.85f + g * 0.15f);
+            ng = std::min(255.0f, g * 0.82f + r * 0.18f);
+            nb = std::min(255.0f, b * 1.05f);
+        }
+    } else if (mode == ColorblindMode::Protanopia) {
+        // Enhance red threats into bright yellow-gold and keep cool hues crisp cyan/magenta
+        if (r > g * 1.25f) {
+            nr = 255.0f;
+            ng = std::min(255.0f, std::max(185.0f, g * 1.15f));
+            nb = std::min(255.0f, b * 0.35f + 30.0f);
+        } else {
+            nr = std::min(255.0f, r * 0.65f + b * 0.25f);
+            ng = std::min(255.0f, g * 0.95f + 15.0f);
+            nb = std::min(255.0f, std::max(b, g) * 1.08f);
+        }
+    } else if (mode == ColorblindMode::Tritanopia) {
+        // Blue-yellow safe: shift blues toward teal-mint and yellows/reds toward high-contrast crimson-coral
+        if (b > r * 1.2f) {
+            nr = std::min(255.0f, r * 0.5f + 20.0f);
+            ng = std::min(255.0f, std::max(g, b * 0.88f));
+            nb = std::min(255.0f, b * 0.85f);
+        } else {
+            nr = std::min(255.0f, std::max(r, g) * 1.08f);
+            ng = std::min(255.0f, g * 0.52f + 25.0f);
+            nb = std::min(255.0f, b * 0.65f + 55.0f);
+        }
+    }
+
+    return sf::Color(
+        static_cast<std::uint8_t>(std::clamp(nr, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(ng, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(nb, 0.0f, 255.0f)),
+        c.a
+    );
+}
+
+// Stage 3: Visual Sound Subtitles / Closed Captions
+struct SoundCaptionEvent {
+    std::string text;
+    sf::Vector2f origin{640.0f, 400.0f};
+    float ageSec{0.0f};
+    float durationSec{2.8f};
+    sf::Color color{125, 211, 252};
+};
+
+inline const char* compassDirectionLabel(sf::Vector2f from, sf::Vector2f to) noexcept {
+    const float dx = to.x - from.x;
+    const float dy = to.y - from.y;
+    if (dx * dx + dy * dy < 28.0f * 28.0f) {
+        return "HERE";
+    }
+    const float deg = std::atan2(dy, dx) * (180.0f / 3.14159265f);
+    if (deg >= -22.5f && deg < 22.5f)   return "E";
+    if (deg >= 22.5f && deg < 67.5f)    return "SE";
+    if (deg >= 67.5f && deg < 112.5f)   return "S";
+    if (deg >= 112.5f && deg < 157.5f)  return "SW";
+    if (deg >= -67.5f && deg < -22.5f)  return "NE";
+    if (deg >= -112.5f && deg < -67.5f) return "N";
+    if (deg >= -157.5f && deg < -112.5f) return "NW";
+    return "W";
+}
+
+inline std::string formatDirectionalCaption(sf::Vector2f listenerPos, sf::Vector2f sourcePos, const std::string& description) {
+    const float dx = sourcePos.x - listenerPos.x;
+    const float dy = sourcePos.y - listenerPos.y;
+    const float distPx = std::sqrt(dx * dx + dy * dy);
+    const int distMeters = static_cast<int>(std::round(distPx / 28.0f));
+    const char* dir = compassDirectionLabel(listenerPos, sourcePos);
+    if (distMeters <= 1) {
+        return std::string("[HERE] ") + description;
+    }
+    return std::string("[") + dir + " " + std::to_string(distMeters) + "m] " + description;
+}
+
 struct MaterialProperties {
     float reflectivity;         // Fraction of wave energy retained after bounce
     float transmission;         // Fraction of sound energy that passes through wall to AI listeners
@@ -637,31 +747,48 @@ struct MaterialProperties {
     const char* displayName;
 };
 
-inline MaterialProperties getMaterialProperties(SurfaceMaterial mat) noexcept {
+inline MaterialProperties getMaterialProperties(
+    SurfaceMaterial mat,
+    ColorblindMode cbMode = ColorblindMode::Normal
+) noexcept {
+    MaterialProperties props{};
     switch (mat) {
         case SurfaceMaterial::Stone:
-            return {0.82f, 0.24f, 3.0f, 13.0f, 0, 1.0f, sf::Color(56, 189, 248), sf::Color(24, 58, 88), "SLATE STONE"};
+            props = {0.82f, 0.24f, 3.0f, 13.0f, 0, 1.0f, sf::Color(56, 189, 248), sf::Color(24, 58, 88), "SLATE STONE"};
+            break;
         case SurfaceMaterial::Concrete:
-            return {0.76f, 0.30f, 2.7f, 14.0f, 0, 1.0f, sf::Color(148, 163, 184), sf::Color(42, 54, 72), "REINFORCED CONCRETE"};
+            props = {0.76f, 0.30f, 2.7f, 14.0f, 0, 1.0f, sf::Color(148, 163, 184), sf::Color(42, 54, 72), "REINFORCED CONCRETE"};
+            break;
         case SurfaceMaterial::Metal:
             // Block 2.2: Polished Metal mirrors — lossless reflection (1.0f) & up to +2 bonus reflections
-            return {1.00f, 0.48f, 3.9f, 11.0f, 2, 1.0f, sf::Color(165, 243, 252), sf::Color(45, 88, 115), "POLISHED METAL"};
+            props = {1.00f, 0.48f, 3.9f, 11.0f, 2, 1.0f, sf::Color(165, 243, 252), sf::Color(45, 88, 115), "POLISHED METAL"};
+            break;
         case SurfaceMaterial::Water:
             // Block 2.4: Water — conducts sound to 2x distance
-            return {0.72f, 0.56f, 2.4f, 8.0f,  0, 2.0f, sf::Color(45, 212, 191), sf::Color(16, 68, 78), "STAGNANT WATER"};
+            props = {0.72f, 0.56f, 2.4f, 8.0f,  0, 2.0f, sf::Color(45, 212, 191), sf::Color(16, 68, 78), "STAGNANT WATER"};
+            break;
         case SurfaceMaterial::DampMoss:
             // Block 2.1: Absorbing DampMoss / Foam — reflection attenuated by 80% (reflectivity = 0.20f)
-            return {0.20f, 0.14f, 1.5f, 15.0f, 0, 1.0f, sf::Color(52, 211, 153), sf::Color(16, 58, 44), "DAMP MOSS"};
+            props = {0.20f, 0.14f, 1.5f, 15.0f, 0, 1.0f, sf::Color(52, 211, 153), sf::Color(16, 58, 44), "DAMP MOSS"};
+            break;
         case SurfaceMaterial::ResonanceDoor:
-            return {0.92f, 0.35f, 3.4f, 12.0f, 0, 1.0f, sf::Color(192, 132, 252), sf::Color(68, 38, 102), "RESONANCE GATE"};
+            props = {0.92f, 0.35f, 3.4f, 12.0f, 0, 1.0f, sf::Color(192, 132, 252), sf::Color(68, 38, 102), "RESONANCE GATE"};
+            break;
         case SurfaceMaterial::EchoCrystal:
             // Stage 2: Crystal Vaults — splits & scatters sonar rays chaotically with high reflectivity
-            return {0.96f, 0.38f, 3.8f, 10.0f, 2, 1.25f, sf::Color(232, 121, 249), sf::Color(88, 28, 135), "ECHO CRYSTAL"};
+            props = {0.96f, 0.38f, 3.8f, 10.0f, 2, 1.25f, sf::Color(232, 121, 249), sf::Color(88, 28, 135), "ECHO CRYSTAL"};
+            break;
         case SurfaceMaterial::Glass:
         default:
             // Block 2.3: Brittle Glass — semi-transparent to sound until shattered by high-energy pulse (+40 noise)
-            return {0.62f, 0.72f, 2.6f, 7.0f,  1, 1.0f, sf::Color(224, 242, 254), sf::Color(80, 135, 170), "BRITTLE GLASS"};
+            props = {0.62f, 0.72f, 2.6f, 7.0f,  1, 1.0f, sf::Color(224, 242, 254), sf::Color(80, 135, 170), "BRITTLE GLASS"};
+            break;
     }
+    if (cbMode != ColorblindMode::Normal) {
+        props.echoColor = applyColorblindTransform(props.echoColor, cbMode);
+        props.fillTint = applyColorblindTransform(props.fillTint, cbMode);
+    }
+    return props;
 }
 
 // Block 5.1: Dynamic Acoustic Room Events / Modifiers
@@ -712,3 +839,4 @@ struct CodexEntrySpec {
 CodexEntrySpec getCodexEntrySpec(int index) noexcept;
 
 } // namespace echo
+

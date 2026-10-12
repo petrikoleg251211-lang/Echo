@@ -729,7 +729,7 @@ void AcousticSystem::render(
         const auto ambAlpha = static_cast<sf::Uint8>(std::clamp(ambientVisibility * 255.0f, 0.0f, 90.0f));
         for (const auto& w : *walls) {
             if (w.isOpen) continue;
-            const MaterialProperties mp = getMaterialProperties(w.material);
+            const MaterialProperties mp = getMaterialProperties(w.material, m_colorblindMode);
             sf::Color lineCol = mp.echoColor;
             lineCol.a = (w.material == SurfaceMaterial::Glass || w.material == SurfaceMaterial::EchoCrystal)
                 ? static_cast<sf::Uint8>(std::min<int>(185, ambAlpha * 2 + 44))
@@ -745,7 +745,7 @@ void AcousticSystem::render(
         const float harmonicPulse = 1.0f + cfg::feel::kEchoPulseAmplitude *
             std::sin(echo.age * cfg::feel::kEchoPulseFreqRad + (echo.hitPoint.x + echo.hitPoint.y) * 0.025f);
         const float smoothAlpha = std::clamp(lifeRatio * lifeRatio * echo.intensity * harmonicPulse, 0.0f, 1.0f);
-        const MaterialProperties mp = getMaterialProperties(echo.material);
+        const MaterialProperties mp = getMaterialProperties(echo.material, m_colorblindMode);
 
         const float pulsedHalfLen = echo.halfLength * (0.94f + 0.08f * harmonicPulse);
         const sf::Vector2f p1 = echo.hitPoint - echo.tangent * pulsedHalfLen;
@@ -790,7 +790,10 @@ void AcousticSystem::render(
             m_echoLines.append(sf::Vertex(p1 + echo.normal * rippleOffset, rippleCol));
             m_echoLines.append(sf::Vertex(p2 + echo.normal * rippleOffset, rippleCol));
         } else if (echo.material == SurfaceMaterial::EchoCrystal) {
-            sf::Color prismCol(244, 114, 182, static_cast<sf::Uint8>(smoothAlpha * 210.0f));
+            sf::Color prismCol = applyColorblindTransform(
+                sf::Color(244, 114, 182, static_cast<sf::Uint8>(smoothAlpha * 210.0f)),
+                m_colorblindMode
+            );
             m_echoLines.append(sf::Vertex(echo.hitPoint - echo.normal * 6.0f - echo.tangent * 4.0f, prismCol));
             m_echoLines.append(sf::Vertex(echo.hitPoint + echo.normal * 6.0f + echo.tangent * 4.0f, prismCol));
             m_echoLines.append(sf::Vertex(echo.hitPoint - echo.normal * 6.0f + echo.tangent * 4.0f, prismCol));
@@ -806,7 +809,7 @@ void AcousticSystem::render(
         if (!ring.active) continue;
         const float progress = ring.radius / std::max(1.0f, ring.maxRadius);
         const float alphaF = std::clamp((1.0f - progress) * ring.intensity * 0.45f, 0.0f, 1.0f);
-        sf::Color ringCol = ring.color;
+        sf::Color ringCol = applyColorblindTransform(ring.color, m_colorblindMode);
         ringCol.a = static_cast<sf::Uint8>(alphaF * 255.0f);
 
         constexpr int kSegments = 36;
@@ -827,10 +830,11 @@ void AcousticSystem::render(
         const float fade = 1.0f - (ray.traveled / std::max(1.0f, ray.maxDistance));
         const float alphaF = std::clamp(fade * ray.intensity, 0.0f, 1.0f);
 
-        sf::Color headColor = ray.tint;
+        const sf::Color cbRayTint = applyColorblindTransform(ray.tint, m_colorblindMode);
+        sf::Color headColor = cbRayTint;
         headColor.a = static_cast<sf::Uint8>(alphaF * 230.0f);
 
-        sf::Color tailColor = ray.tint;
+        sf::Color tailColor = cbRayTint;
         tailColor.a = static_cast<sf::Uint8>(alphaF * 30.0f);
 
         const sf::Vector2f tailPos = ray.pos - ray.dir * 16.0f;

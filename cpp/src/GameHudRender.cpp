@@ -360,11 +360,48 @@ void Game::renderHud() {
     }
 
     renderTutorialBanner();
+    renderSoundCaptions();
 
     if (m_loreDisplayTimer > 0.0f) {
         m_ui.drawPanel(win, {240.0f, 608.0f}, {800.0f, 82.0f}, sf::Color(10, 20, 38, 235), sf::Color(56, 189, 248, 220), 2.0f);
         m_ui.drawText(win, m_activeLoreTitle, {260.0f, 618.0f}, 13.0f, sf::Color(56, 189, 248), TextAlign::Left, true);
         m_ui.drawText(win, m_activeLoreBody, {260.0f, 646.0f}, 10.5f, sf::Color(226, 232, 240));
+    }
+}
+
+void Game::renderSoundCaptions() {
+    if (!m_window || !m_subtitlesEnabled || m_soundCaptions.empty()) return;
+    auto& win = *m_window;
+
+    const float panelW = 540.0f;
+    const float lineH = 19.0f;
+    const float panelH = 12.0f + static_cast<float>(m_soundCaptions.size()) * lineH;
+    const float baseY = (m_loreDisplayTimer > 0.0f) ? (598.0f - panelH) : (694.0f - panelH);
+    const sf::Vector2f topLeft{(cfg::kWorldWidth - panelW) * 0.5f, baseY};
+
+    m_ui.drawPanel(
+        win,
+        topLeft,
+        {panelW, panelH},
+        sf::Color(5, 11, 22, 205),
+        sf::Color(45, 72, 108, 175),
+        1.0f
+    );
+
+    for (std::size_t i = 0; i < m_soundCaptions.size(); ++i) {
+        const auto& cap = m_soundCaptions[i];
+        const float fade = std::clamp(cap.remainingSec / std::max(0.2f, cap.totalSec * 0.35f), 0.25f, 1.0f);
+        sf::Color textCol = cap.color;
+        textCol.a = static_cast<sf::Uint8>(fade * 255.0f);
+        m_ui.drawText(
+            win,
+            cap.formattedLine,
+            {cfg::kWorldWidth * 0.5f, topLeft.y + 6.0f + static_cast<float>(i) * lineH},
+            10.0f,
+            textCol,
+            TextAlign::Center,
+            true
+        );
     }
 }
 
@@ -532,7 +569,7 @@ void Game::renderMenuOverlay() {
     auto& win = *m_window;
     m_ui.drawPanel(win, {320.0f, 120.0f}, {640.0f, 550.0f}, sf::Color(5, 11, 22, 238), sf::Color(56, 189, 248, 210), 2.0f);
 
-    std::string title = "ECHOLABYRINTH 5.0 — RESONANCE";
+    std::string title = "ECHOLABYRINTH 5.3 — RESONANCE";
     std::string subtitle = "SOUND IS SIGHT, WEAPON, & RISK  //  NATIVE C++17 & SFML";
     sf::Color titleCol(56, 189, 248);
 
@@ -593,20 +630,29 @@ void Game::renderMenuOverlay() {
 void Game::renderSettingsOverlay() {
     if (!m_window) return;
     auto& win = *m_window;
-    m_ui.drawPanel(win, {290.0f, 110.0f}, {700.0f, 575.0f}, sf::Color(5, 11, 22, 242), sf::Color(56, 189, 248, 210), 2.0f);
-    m_ui.drawText(win, "3D SPATIAL AUDIO & ACOUSTIC ENGINE SETTINGS", {640.0f, 142.0f}, 18.0f, sf::Color(56, 189, 248), TextAlign::Center, true);
+    m_ui.drawPanel(win, {250.0f, 76.0f}, {780.0f, 648.0f}, sf::Color(5, 11, 22, 242), sf::Color(56, 189, 248, 210), 2.0f);
+    m_ui.drawText(win, "3D SPATIAL AUDIO, GLSL POST-FX & ACCESSIBILITY", {640.0f, 104.0f}, 18.0f, sf::Color(56, 189, 248), TextAlign::Center, true);
 
-    char buf0[64], buf1[64], buf2[64], buf3[64], buf4[64], buf5[64], buf6[64], buf7[64];
+    char buf0[64], buf1[64], buf2[64], buf3[64], buf4[64], buf5[64], buf6[64], buf7[64], buf8[80], buf9[80], buf10[80];
     std::snprintf(buf0, sizeof(buf0), "MASTER VOLUME: %.0f%%", m_audio ? m_audio->masterVolume() : 80.0f);
-    std::snprintf(buf1, sizeof(buf1), "ADAPTIVE MUSIC LAYER: %.0f%%", m_audio ? m_audio->musicVolume() : 75.0f);
+    std::snprintf(buf1, sizeof(buf1), "6-STEM ADAPTIVE MUSIC: %.0f%%", m_audio ? m_audio->musicVolume() : 75.0f);
     std::snprintf(buf2, sizeof(buf2), "3D SPATIAL SFX VOLUME: %.0f%%", m_audio ? m_audio->sfxVolume() : 85.0f);
     std::snprintf(buf3, sizeof(buf3), "AMBIENT COMPLEX DRONE: %.0f%%", m_audio ? m_audio->ambientVolume() : 80.0f);
     std::snprintf(buf4, sizeof(buf4), "ACOUSTIC RAY DENSITY: %.0f%%", m_acoustics.rayDensityScale() * 100.0f);
     std::snprintf(buf5, sizeof(buf5), "MAX WALL REFLECTIONS: %d BOUNCES", static_cast<int>(m_acoustics.maxReflections()));
     std::snprintf(buf6, sizeof(buf6), "AMBIENT VISIBILITY: %.0f%%", m_ambientVisibility * 100.0f);
     std::snprintf(buf7, sizeof(buf7), "DISPLAY MODE: %s [F11]", m_isFullscreen ? "FULLSCREEN" : "WINDOWED 1280x800");
+    std::snprintf(buf8, sizeof(buf8), "COLORBLIND PALETTE [F6]: %s", colorblindModeName(m_colorblindMode));
+    std::snprintf(buf9, sizeof(buf9), "CLOSED CAPTIONS [F7]: %s", m_subtitlesEnabled ? "ENABLED ([DIR] + DISTANCE)" : "OFF");
+    std::snprintf(
+        buf10,
+        sizeof(buf10),
+        "GLSL BLOOM/CRT [F8]: %s  |  SHAKE: %.0f%%",
+        m_postFxEnabled ? "ON" : "OFF",
+        m_shakeIntensityScale * 100.0f
+    );
 
-    if (m_menuButtons.size() >= 8) {
+    if (m_menuButtons.size() >= 11) {
         m_menuButtons[0].label = buf0;
         m_menuButtons[1].label = buf1;
         m_menuButtons[2].label = buf2;
@@ -615,6 +661,9 @@ void Game::renderSettingsOverlay() {
         m_menuButtons[5].label = buf5;
         m_menuButtons[6].label = buf6;
         m_menuButtons[7].label = buf7;
+        m_menuButtons[8].label = buf8;
+        m_menuButtons[9].label = buf9;
+        m_menuButtons[10].label = buf10;
     }
 
     for (std::size_t i = 0; i < m_menuButtons.size(); ++i) {
@@ -634,7 +683,7 @@ void Game::renderSettingsOverlay() {
             win,
             btn.label,
             {btn.center.x, btn.center.y - 6.5f},
-            12.5f,
+            11.5f,
             selected ? sf::Color(224, 242, 254) : sf::Color(148, 163, 184),
             TextAlign::Center,
             selected

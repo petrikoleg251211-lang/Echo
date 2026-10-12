@@ -45,15 +45,18 @@ void Game::rebuildMenuButtons() {
         m_menuButtons.push_back({"SURVEYOR FIELD MANUAL", {cx, 540.0f}, {380.0f, 40.0f}, true});
         m_menuButtons.push_back({"RETURN TO MAIN MENU", {cx, 590.0f}, {380.0f, 40.0f}, true});
     } else if (m_state == AppState::Settings) {
-        m_menuButtons.push_back({"MASTER VOLUME: < ADJUST >", {cx, 225.0f}, {440.0f, 38.0f}, true});
-        m_menuButtons.push_back({"MUSIC LAYER VOLUME: < ADJUST >", {cx, 273.0f}, {440.0f, 38.0f}, true});
-        m_menuButtons.push_back({"SFX SPATIAL VOLUME: < ADJUST >", {cx, 321.0f}, {440.0f, 38.0f}, true});
-        m_menuButtons.push_back({"AMBIENT DRONE VOLUME: < ADJUST >", {cx, 369.0f}, {440.0f, 38.0f}, true});
-        m_menuButtons.push_back({"RAY DENSITY SCALE: < ADJUST >", {cx, 417.0f}, {440.0f, 38.0f}, true});
-        m_menuButtons.push_back({"MAX WALL REFLECTIONS: < ADJUST >", {cx, 465.0f}, {440.0f, 38.0f}, true});
-        m_menuButtons.push_back({"AMBIENT DARKNESS: < ADJUST >", {cx, 513.0f}, {440.0f, 38.0f}, true});
-        m_menuButtons.push_back({"WINDOW / FULLSCREEN [F11]", {cx, 561.0f}, {440.0f, 38.0f}, true});
-        m_menuButtons.push_back({"BACK", {cx, 618.0f}, {320.0f, 42.0f}, true});
+        m_menuButtons.push_back({"MASTER VOLUME: < ADJUST >", {cx, 165.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"MUSIC LAYER VOLUME: < ADJUST >", {cx, 206.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"SFX SPATIAL VOLUME: < ADJUST >", {cx, 247.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"AMBIENT DRONE VOLUME: < ADJUST >", {cx, 288.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"RAY DENSITY SCALE: < ADJUST >", {cx, 329.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"MAX WALL REFLECTIONS: < ADJUST >", {cx, 370.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"AMBIENT DARKNESS: < ADJUST >", {cx, 411.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"WINDOW / FULLSCREEN [F11]", {cx, 452.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"COLORBLIND PALETTE [F6]", {cx, 493.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"CLOSED CAPTIONS [F7]", {cx, 534.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"GLSL BLOOM/CRT & SHAKE [F8]", {cx, 575.0f}, {480.0f, 34.0f}, true});
+        m_menuButtons.push_back({"BACK", {cx, 624.0f}, {320.0f, 38.0f}, true});
     } else if (m_state == AppState::Controls || m_state == AppState::Codex) {
         m_menuButtons.push_back({"BACK", {cx, 665.0f}, {320.0f, 44.0f}, true});
     } else if (m_state == AppState::GameOver || m_state == AppState::Victory) {
@@ -135,6 +138,24 @@ void Game::executeMenuSelection(std::size_t index) {
         } else if (index == 7) {
             toggleFullscreen();
         } else if (index == 8) {
+            cycleColorblindMode();
+        } else if (index == 9) {
+            m_subtitlesEnabled = !m_subtitlesEnabled;
+            if (!m_subtitlesEnabled) m_soundCaptions.clear();
+        } else if (index == 10) {
+            if (m_postFxEnabled && m_shakeIntensityScale >= 0.9f) {
+                m_shakeIntensityScale = 0.5f;
+            } else if (m_postFxEnabled && m_shakeIntensityScale >= 0.4f) {
+                m_shakeIntensityScale = 0.0f;
+                m_reduceFlashes = true;
+            } else if (m_postFxEnabled) {
+                setPostFxEnabled(false);
+            } else {
+                setPostFxEnabled(true);
+                m_shakeIntensityScale = 1.0f;
+                m_reduceFlashes = false;
+            }
+        } else if (index == 11) {
             saveCheckpoint();
             m_state = m_previousState;
             rebuildMenuButtons();
@@ -176,6 +197,28 @@ void Game::handleEvents() {
 void Game::handleKeyPressed(sf::Keyboard::Key key) {
     if (key == sf::Keyboard::F11) {
         toggleFullscreen();
+        return;
+    }
+    if (key == sf::Keyboard::F6) {
+        cycleColorblindMode();
+        m_statusBannerText = std::string("COLORBLIND PALETTE [F6]: ") + colorblindModeName(m_colorblindMode);
+        m_statusBannerTimer = 2.4f;
+        if (m_audio) m_audio->playEffect(SoundEffectId::UiSelect, 0.7f, 1.15f);
+        return;
+    }
+    if (key == sf::Keyboard::F7) {
+        m_subtitlesEnabled = !m_subtitlesEnabled;
+        if (!m_subtitlesEnabled) m_soundCaptions.clear();
+        m_statusBannerText = std::string("DIRECTIONAL SOUND SUBTITLES [F7]: ") + (m_subtitlesEnabled ? "ENABLED" : "OFF");
+        m_statusBannerTimer = 2.4f;
+        if (m_audio) m_audio->playEffect(SoundEffectId::UiSelect, 0.7f, 1.15f);
+        return;
+    }
+    if (key == sf::Keyboard::F8) {
+        setPostFxEnabled(!m_postFxEnabled);
+        m_statusBannerText = std::string("GLSL BLOOM & CRT POST-FX [F8]: ") + (m_postFxEnabled ? "ENABLED" : "OFF");
+        m_statusBannerTimer = 2.4f;
+        if (m_audio) m_audio->playEffect(SoundEffectId::UiSelect, 0.7f, 1.15f);
         return;
     }
 

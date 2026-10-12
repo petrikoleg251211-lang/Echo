@@ -1,54 +1,64 @@
-# EchoLabyrinth — v5.0.1 "Resonance" (C++17 / SFML 2.6.1)
+# EchoLabyrinth — v5.4.0 "Resonance" (C++17 / SFML 2.6.1 / OpenAL 3D / GLSL PostFX)
 
-A standalone, zero-placeholder C++17 acoustic roguelike survival horror engine built on **SFML 2.6.1** (`Graphics`, `Window`, `Audio`, `System`) with **OpenAL 3D spatial audio**, **5-track procedural dark-ambient soundtrack (`SoundtrackComposer`)**, **procedural 64×64 normal-mapped surface textures**, **8 distinct enemy archetypes + 3-phase Final Boss (*The Choir Sovereign*)**, **global Noise Level meter (0..100)**, **8 acoustic surface materials**, **32-room procedural labyrinth with dynamic room events**, **12 passive Relics with hidden harmonic synergies**, and **12 Audio-Lore Codex recordings**.
+A standalone, zero-placeholder C++17 acoustic roguelike survival horror engine built on **SFML 2.6.1** (`Graphics`, `Window`, `Audio`, `System`) with **OpenAL 3D spatial audio**, **GLSL `#version 120` Post-Processing Shaders (Bloom, Chromatic Aberration, Shockwave UV, CRT Scanlines)**, **6-stem adaptive dark-ambient soundtrack (`SoundtrackComposer`) with real-time Low-Pass & Schroeder Reverb DSP**, **4 procedural biomes**, **13 enemy archetypes + Room 16 Mini-Boss (*The Conductor*) + Room 31 3-Phase Final Boss (*The Choir Sovereign*)**, **4 Colorblind Palettes & Directional Closed Captions (`[F6]`/`[F7]`/`[F8]`)**, and **CPack Portable ZIP/NSIS/TGZ Release Packaging**.
 
 ---
 
-## Stage 0 Architecture & Modular Source Layout (`≤ ~900 lines per file`)
+## Stage 0–4 Architecture & Modular Source Layout (`24 Modules + Shaders + CPack`)
 
 ```text
 cpp/
-├── CMakeLists.txt              # CMake 3.16+ (auto-fetches SFML 2.6.1, optional ASan/UBSan)
-├── CHANGELOG.md                # Full version history (v1.0 -> v5.0.1)
+├── CMakeLists.txt              # CMake 3.16+ (auto-fetches SFML 2.6.1, ASan/UBSan, CPack ZIP/NSIS/TGZ)
+├── LICENSE                     # MIT License (C++17 Code) + CC0 1.0 Public Domain (3D/Audio/Shader Assets)
+├── CHANGELOG.md                # Full version history (v1.0 -> v5.4.0 Stages 0–4)
 ├── .clang-format               # Google/LLVM C++17 style (4 spaces, 110 column limit)
-├── build_windows.bat           # 1-click Windows build + 18-suite self-test + launch script
+├── build_windows.bat           # 1-click Windows build + 21-suite self-test + launch script
+├── resources/
+│   └── echolabyrinth.rc        # Windows VS_VERSION_INFO executable metadata (v5.4.0.0)
 ├── assets/
-│   ├── models/                 # Procedural Wavefront .obj meshes (auto-populated)
-│   └── textures/               # Procedural 64x64 RGBA + Normal maps
+│   ├── ASSET_MANIFEST.md       # CC0 1.0 Public Domain asset & audio registry
+│   ├── icon/
+│   │   └── echolabyrinth_icon.svg # Official vector sonar-reticle application icon
+│   ├── models/                 # 7 Wavefront .obj 3D meshes
+│   └── shaders/
+│       └── acoustic_postfx.frag # GLSL #version 120 Bloom, Chromatic Aberration & Shockwave shader
 ├── include/
-│   ├── Config.hpp              # Centralized gameplay, acoustic, relic & codex constants
-│   ├── AssetManager.hpp        # Wavefront .obj parser & procedural 64x64 texture generator
-│   ├── AcousticSystem.hpp      # Multi-bounce DDA raycaster, materials & Echo Trap
-│   ├── AudioManager.hpp        # OpenAL 3D spatial sound & 5-track procedural OST engine
+│   ├── Config.hpp              # Centralized balance, 4 biomes, 4 difficulties, colorblind & captions
+│   ├── AssetManager.hpp        # Wavefront .obj parser, 64x64 textures & 64x64 window icon generator
+│   ├── AcousticSystem.hpp      # Multi-bounce DDA raycaster, EchoCrystal ray splitting & Echo Traps
+│   ├── AudioManager.hpp        # OpenAL 3D spatial sound, 6-stem mixer & Low-Pass/Reverb DSP
+│   ├── PostProcessor.hpp       # Off-screen FBO & GLSL fragment shader post-processing pipeline
 │   ├── Player.hpp              # Movement, frequency tuning, stamina, charged ping, relics
-│   ├── EnemyAI.hpp             # 8 enemy archetypes + 3-phase Choir Sovereign Boss FSM
-│   ├── Labyrinth.hpp           # 32-room procedural graph, room events, pedestals, codex
-│   ├── SaveSystem.hpp          # ELSV5 checksummed persistence + V4/V3 backward migration
+│   ├── EnemyAI.hpp             # 13 enemy archetypes + Conductor Mini-Boss + Choir Sovereign Boss FSM
+│   ├── Labyrinth.hpp           # 32-room procedural graph, 4 biomes, room events, pedestals, codex
+│   ├── SaveSystem.hpp          # ELSV6 checksummed persistence + V5/V4/V3 backward migration
 │   ├── UiRenderer.hpp          # Custom vector bitmap font & HUD primitives
-│   └── Game.hpp                # Master game state, overlays, noise & run lifecycle
+│   └── Game.hpp                # Master game state, hit-stop, closed captions, benchmark & balance CLI
 └── src/
-    ├── main.cpp                # CLI entry point (--self-test, --seed)
-    ├── AssetManager.cpp        # Mesh & texture synthesis
-    ├── AcousticSystem.cpp      # Ray propagation, material reflections & Echo Traps
-    ├── AudioManager.cpp        # OpenAL 3D spatial cues & dynamic crossfade mixer
+    ├── main.cpp                # CLI entry (--self-test, --balance-report, --benchmark, --export-ost, --version)
+    ├── AssetManager.cpp        # Mesh parser, procedural 64x64 textures & 64x64 window icon synthesis
+    ├── AcousticSystem.cpp      # Ray propagation, EchoCrystal prism splitting & Echo Traps
+    ├── AudioManager.cpp        # OpenAL 3D cues, 6-stem crossfader & One-Pole LPF / Schroeder Reverb
     ├── SoundtrackComposer.cpp  # 5-track procedural dark-ambient OST DSP & WAV exporter
+    ├── PostProcessor.cpp       # RenderTexture FBO & GLSL shader uniform manager
     ├── Player.cpp              # Locomotion, sonar abilities & collision resolution
     ├── Relics.cpp              # 12 Relic specs, pedestal pool rotation & harmonic synergies
     ├── Codex.cpp               # 12 Audio-Lore Codex transcripts & collection state
-    ├── EnemyAI.cpp             # Core FSM navigation, acoustic perception & 2.5D rendering
-    ├── EnemyVariants.cpp       # 8 enemy archetype parameters, noise tiers & stomp response
-    ├── BossAI.cpp              # 3-phase Choir Sovereign Boss FSM & SonicBolt volleys
-    ├── LabyrinthGen.cpp        # 32-room procedural layout, themes & connectivity guarantees
+    ├── EnemyAI.cpp             # Core FSM navigation, 0.45s attack telegraph, Leech & Banshee logic
+    ├── EnemyVariants.cpp       # 13 enemy archetype parameters, noise tiers & stomp response
+    ├── BossAI.cpp              # 3-phase Choir Sovereign, 2-phase Conductor & TuningFork beams
+    ├── LabyrinthGen.cpp        # 32-room procedural layout, 4 biomes & connectivity guarantees
     ├── LabyrinthRooms.cpp      # Active room state, cross-room door propagation & BFS check
-    ├── SaveSystem.cpp          # Checksummed save serialization & V3/V4->V5 migration
+    ├── SaveSystem.cpp          # Checksummed save serialization & V3/V4/V5->V6 migration
     ├── UiRenderer.cpp          # Vector typography & UI primitives
-    ├── Game.cpp                # Window lifecycle & core gameplay tick
-    ├── GameRun.cpp             # Run start/end, room transitions, wave spawning & checkpoints
-    ├── GameNoise.cpp           # Global noise meter, silence decay, glass shatter & breaches
-    ├── GameInput.cpp           # Keyboard/Mouse controls & tactical overlays
-    ├── GameWorldRender.cpp     # 2.5D world rendering, lighting & sonar wavefronts
-    ├── GameHudRender.cpp       # Tactical HUD, minimap, boss bar & Codex/Relic modals
-    └── GameSelfTest.cpp        # 18-suite deterministic headless verification
+    ├── Game.cpp                # Window lifecycle, runtime icon, hit-stop & spatial sound captions
+    ├── GameRun.cpp             # Run start/end, biome audio sync, wave spawning & V6 checkpoints
+    ├── GameNoise.cpp           # Global noise meter, shockwave triggers & closed captions
+    ├── GameInput.cpp           # Keyboard/Mouse controls & [F6]/[F7]/[F8] accessibility hotkeys
+    ├── GameWorldRender.cpp     # 2.5D world rendering routed through PostProcessor GLSL pipeline
+    ├── GameHudRender.cpp       # Tactical HUD, closed captions panel, minimap & accessibility menu
+    ├── GameBalance.cpp         # 1000-run Monte Carlo bot, 1200-frame benchmark & Suites 18–21
+    └── GameSelfTest.cpp        # 21-suite deterministic headless verification runner
 ```
 
 ---

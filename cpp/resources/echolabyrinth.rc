@@ -1,0 +1,37 @@
+// EchoLabyrinth 5.4 "Resonance" — Windows Application Resource Script (.rc)
+// Embeds executable version metadata for Windows 10/11 Explorer & Task Manager.
+
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     5,4,0,0
+PRODUCTVERSION  5,4,0,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+FILEFLAGS       VS_FF_DEBUG
+#else
+FILEFLAGS       0x0L
+#endif
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "Subterranean Survey Corps\0"
+            VALUE "FileDescription",  "EchoLabyrinth 5.4 'Resonance' — Acoustic Roguelike Horror (C++17 / SFML)\0"
+            VALUE "FileVersion",      "5.4.0.0\0"
+            VALUE "InternalName",     "EchoLabyrinth_SFML\0"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 EchoLabyrinth Project (MIT / CC0)\0"
+            VALUE "OriginalFilename", "EchoLabyrinth_SFML.exe\0"
+            VALUE "ProductName",      "EchoLabyrinth 5.4: Resonance\0"
+            VALUE "ProductVersion",   "5.4.0.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

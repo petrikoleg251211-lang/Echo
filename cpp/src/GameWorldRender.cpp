@@ -30,9 +30,23 @@ void Game::render() {
             std::cos(m_runTimeSec * 51.0f) * mag
         );
     }
-    win.setView(activeView);
 
-    renderWorld();
+    const PostFxUniforms postUniforms = PostProcessor::computeUniforms(
+        m_postFxEnabled,
+        m_reduceFlashes,
+        m_noiseLevel,
+        m_hitStopTimer,
+        static_cast<int>(m_acoustics.activeRayCount()),
+        m_postFxShockwaveTimer,
+        m_postFxShockwaveOrigin
+    );
+
+    m_postProcessor.update(cfg::kFixedTimeStep);
+    sf::RenderTarget& worldTarget = m_postProcessor.beginSceneCapture(win, activeView);
+    renderWorld(worldTarget);
+    m_postProcessor.presentToWindow(win, m_worldView, postUniforms);
+
+    win.setView(m_worldView);
 
     if (m_state == AppState::Playing) {
         renderHud();
@@ -55,14 +69,12 @@ void Game::render() {
     win.display();
 }
 
-void Game::renderWorld() {
-    if (!m_window) return;
-    auto& win = *m_window;
+void Game::renderWorld(sf::RenderTarget& win) {
     const auto& room = m_labyrinth.currentRoom();
 
-    renderSubterraneanProps();
+    renderSubterraneanProps(win);
     m_acoustics.render(win, m_ambientVisibility, &room.walls);
-    renderInteractiveObjects();
+    renderInteractiveObjects(win);
 
     // Stage 2: Iron Foundry active steam-hammer press reverberation ring (masks footsteps by -75%)
     if (room.biome == BiomeId::IronFoundry && isFoundryHammerMaskingActive()) {
@@ -97,12 +109,10 @@ void Game::renderWorld() {
         m_player.render(win, &m_assets);
     }
 
-    renderVignetteAndDust();
+    renderVignetteAndDust(win);
 }
 
-void Game::renderSubterraneanProps() {
-    if (!m_window) return;
-    auto& win = *m_window;
+void Game::renderSubterraneanProps(sf::RenderTarget& win) {
     const auto& room = m_labyrinth.currentRoom();
     const sf::Vector2f pPos = m_player.position();
     const float visorBoost = m_player.hasRelic(RelicId::SubharmonicVisor) ? 0.08f : 0.0f;
@@ -155,9 +165,7 @@ void Game::renderSubterraneanProps() {
     }
 }
 
-void Game::renderInteractiveObjects() {
-    if (!m_window) return;
-    auto& win = *m_window;
+void Game::renderInteractiveObjects(sf::RenderTarget& win) {
     const auto& room = m_labyrinth.currentRoom();
     const sf::Vector2f pPos = m_player.position();
     const float visorBoost = m_player.hasRelic(RelicId::SubharmonicVisor) ? 0.10f : 0.0f;
@@ -403,9 +411,7 @@ void Game::renderInteractiveObjects() {
     }
 }
 
-void Game::renderVignetteAndDust() {
-    if (!m_window) return;
-    auto& win = *m_window;
+void Game::renderVignetteAndDust(sf::RenderTarget& win) {
     sf::VertexArray dust(sf::Quads);
     const sf::Vector2f pPos = m_player.position();
     for (const auto& pt : m_particles) {

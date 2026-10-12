@@ -56,6 +56,9 @@ public:
     std::size_t loadedDiskModelCount() const noexcept { return m_loadedDiskModelCount; }
     std::size_t totalTriangleCount() const noexcept;
 
+    // Stage 4: Generates a crisp 64x64 RGBA sonar-reticle application window icon
+    static sf::Image generateWindowIconImage();
+
     // Projects and renders a 3D mesh in 2.5D oblique top-down perspective with dynamic normal shading
     void renderMesh25D(
         sf::RenderTarget& target,

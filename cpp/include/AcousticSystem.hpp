@@ -181,6 +181,9 @@ public:
     void setActiveFrequency(AcousticFrequency freq) noexcept { m_activeFrequency = freq; }
     AcousticFrequency activeFrequency() const noexcept { return m_activeFrequency; }
 
+    void setColorblindMode(ColorblindMode mode) noexcept { m_colorblindMode = mode; }
+    ColorblindMode colorblindMode() const noexcept { return m_colorblindMode; }
+
     std::size_t activeRayCount() const noexcept { return m_activeRayCount; }
     std::size_t activeEchoCount() const noexcept { return m_activeEchoCount; }
     std::uint32_t totalPulsesEmitted() const noexcept { return m_totalPulsesEmitted; }
@@ -217,6 +220,7 @@ private:
     float m_rayDensityScale{1.0f};
     std::uint8_t m_maxReflections{cfg::kDefaultMaxReflections};
     AcousticFrequency m_activeFrequency{AcousticFrequency::Mid};
+    ColorblindMode m_colorblindMode{ColorblindMode::Normal};
 
     mutable sf::VertexArray m_wallQuads;
     mutable sf::VertexArray m_echoLines;

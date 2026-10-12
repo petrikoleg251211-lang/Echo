@@ -41,12 +41,62 @@ Game::Game(const std::string& exeDir)
         m_difficulty = static_cast<DifficultyMode>(std::clamp(existing.difficulty, 0, 3));
         m_tutorialDone = existing.tutorialDone;
         m_tutorialRoomStage = m_tutorialDone ? 3 : 0;
+        m_colorblindMode = static_cast<ColorblindMode>(std::clamp(existing.colorblindMode, 0, 3));
+        m_subtitlesEnabled = existing.subtitlesEnabled;
+        m_shakeIntensityScale = std::clamp(existing.shakeIntensityScale, 0.0f, 1.0f);
+        m_reduceFlashes = existing.reduceFlashes;
+        m_postFxEnabled = existing.postFxEnabled;
+        m_acoustics.setColorblindMode(m_colorblindMode);
+        m_postProcessor.setEnabled(m_postFxEnabled);
     }
 }
 
+void Game::setColorblindMode(ColorblindMode mode) noexcept {
+    m_colorblindMode = mode;
+    m_acoustics.setColorblindMode(mode);
+}
+
+void Game::cycleColorblindMode() noexcept {
+    const int next = (static_cast<int>(m_colorblindMode) + 1) % 4;
+    setColorblindMode(static_cast<ColorblindMode>(next));
+}
+
+void Game::pushSoundCaption(
+    const std::string& description,
+    sf::Vector2f origin,
+    sf::Color color,
+    float durationSec
+) {
+    if (!m_subtitlesEnabled) return;
+    const std::string formatted = formatSoundCaptionLine(m_player.position(), origin, description);
+    for (auto& existing : m_soundCaptions) {
+        if (existing.description == description) {
+            existing.formattedLine = formatted;
+            existing.origin = origin;
+            existing.color = applyColorblindTransform(color, m_colorblindMode);
+            existing.remainingSec = durationSec;
+            existing.totalSec = durationSec;
+            return;
+        }
+    }
+    if (m_soundCaptions.size() >= 4) {
+        m_soundCaptions.erase(m_soundCaptions.begin());
+    }
+    SoundCaptionEvent ev{};
+    ev.formattedLine = formatted;
+    ev.description = description;
+    ev.origin = origin;
+    ev.color = applyColorblindTransform(color, m_colorblindMode);
+    ev.remainingSec = durationSec;
+    ev.totalSec = durationSec;
+    m_soundCaptions.push_back(std::move(ev));
+}
+
 void Game::triggerCameraShake(float amplitude, float durationSec) noexcept {
-    if (amplitude >= m_cameraShakeAmplitude || m_cameraShakeTimer <= 0.02f) {
-        m_cameraShakeAmplitude = amplitude;
+    const float scaledAmp = amplitude * m_shakeIntensityScale;
+    if (scaledAmp <= 0.01f) return;
+    if (scaledAmp >= m_cameraShakeAmplitude || m_cameraShakeTimer <= 0.02f) {
+        m_cameraShakeAmplitude = scaledAmp;
         m_cameraShakeElapsed = 0.0f;
     }
     m_cameraShakeTimer = std::max(m_cameraShakeTimer, durationSec);
@@ -80,14 +130,20 @@ void Game::updateTutorialProgression() {
 int Game::run() {
     m_window = std::make_unique<sf::RenderWindow>(
         sf::VideoMode(cfg::kDefaultWindowWidth, cfg::kDefaultWindowHeight),
-        "EchoLabyrinth 5.0 'Resonance' — Acoustic Roguelike Horror",
+        "EchoLabyrinth 5.4 'Resonance' — Acoustic Roguelike Horror",
         sf::Style::Default
     );
     m_window->setFramerateLimit(120);
+    const sf::Image iconImg = AssetManager::generateWindowIconImage();
+    if (iconImg.getPixelsPtr() != nullptr) {
+        m_window->setIcon(iconImg.getSize().x, iconImg.getSize().y, iconImg.getPixelsPtr());
+    }
     updateLetterboxView(cfg::kDefaultWindowWidth, cfg::kDefaultWindowHeight);
 
     m_assets.initialize(m_exeDir, true);
     m_ui.initialize(m_exeDir);
+    m_postProcessor.initialize(cfg::kDefaultWindowWidth, cfg::kDefaultWindowHeight, m_exeDir);
+    m_postProcessor.setEnabled(m_postFxEnabled);
     m_audio = std::make_unique<AudioManager>();
     m_audio->initialize(m_exeDir);
     m_audio->startAmbientDrone();
@@ -146,17 +202,21 @@ void Game::toggleFullscreen() {
     if (m_isFullscreen) {
         m_window->create(
             sf::VideoMode::getDesktopMode(),
-            "EchoLabyrinth 5.0 'Resonance' — Acoustic Roguelike Horror",
+            "EchoLabyrinth 5.4 'Resonance' — Acoustic Roguelike Horror",
             sf::Style::Fullscreen
         );
     } else {
         m_window->create(
             sf::VideoMode(cfg::kDefaultWindowWidth, cfg::kDefaultWindowHeight),
-            "EchoLabyrinth 5.0 'Resonance' — Acoustic Roguelike Horror",
+            "EchoLabyrinth 5.4 'Resonance' — Acoustic Roguelike Horror",
             sf::Style::Default
         );
     }
     m_window->setFramerateLimit(120);
+    const sf::Image iconImg = AssetManager::generateWindowIconImage();
+    if (iconImg.getPixelsPtr() != nullptr) {
+        m_window->setIcon(iconImg.getSize().x, iconImg.getSize().y, iconImg.getPixelsPtr());
+    }
     const sf::Vector2u sz = m_window->getSize();
     updateLetterboxView(sz.x, sz.y);
 }
@@ -195,6 +255,19 @@ void Game::updatePlaying(float dt) {
     m_runTimeSec += dt;
     m_statusBannerTimer = std::max(0.0f, m_statusBannerTimer - dt);
     m_loreDisplayTimer = std::max(0.0f, m_loreDisplayTimer - dt);
+    m_postFxShockwaveTimer = std::max(0.0f, m_postFxShockwaveTimer - dt);
+    for (auto& cap : m_soundCaptions) {
+        cap.remainingSec = std::max(0.0f, cap.remainingSec - dt);
+        cap.formattedLine = formatSoundCaptionLine(m_player.position(), cap.origin, cap.description);
+    }
+    m_soundCaptions.erase(
+        std::remove_if(
+            m_soundCaptions.begin(),
+            m_soundCaptions.end(),
+            [](const SoundCaptionEvent& c) { return c.remainingSec <= 0.0f; }
+        ),
+        m_soundCaptions.end()
+    );
     if (m_cameraShakeTimer > 0.0f) {
         m_cameraShakeTimer = std::max(0.0f, m_cameraShakeTimer - dt);
         m_cameraShakeElapsed += dt;
@@ -238,6 +311,7 @@ void Game::updatePlaying(float dt) {
             m_foundryHammerMaskTimer = 1.35f;
             m_acoustics.emitPulse({640.0f, 400.0f}, 390.0f, 520.0f, 0.80f, 64, WaveSignature::MechanismClunk, 0.0f, 6.2831853f, false);
             if (m_audio) m_audio->playEffect(SoundEffectId::DistantMetalClang, 0.78f, 0.72f);
+            pushSoundCaption("FOUNDRY STEAM PRESS CLANG (-75% STEP NOISE)", {640.0f, 400.0f}, sf::Color(251, 191, 36));
         }
     } else {
         m_foundryHammerTimer = 0.0f;
@@ -252,6 +326,7 @@ void Game::updatePlaying(float dt) {
             m_acoustics.emitPulse({640.0f, 400.0f}, 440.0f, 700.0f, 0.95f, 96, WaveSignature::ResonatorHum, 0.0f, 6.2831853f, false);
             registerNoiseAction(NoiseAction::EchoStormPulse, 1.0f, {640.0f, 400.0f});
             if (m_audio) m_audio->playWaveSignature(WaveSignature::ResonatorHum);
+            pushSoundCaption("ECHO STORM RESONANCE SWEEP (+6 NOISE)", {640.0f, 400.0f}, sf::Color(167, 139, 250));
         }
     }
 
@@ -388,6 +463,12 @@ void Game::updatePlaying(float dt) {
                     1.0f
                 );
             }
+            pushSoundCaption(
+                emitter.isSteamVent ? "HIGH-PRESSURE STEAM VENT HISS" : "ECHOING WATER DRIP",
+                emitter.position,
+                sf::Color(125, 211, 252),
+                2.0f
+            );
         }
     }
 
@@ -419,6 +500,7 @@ void Game::updatePlaying(float dt) {
             m_audio->playWaveSignature(WaveSignature::ResonatorHum);
             m_audio->playSpatial(SoundEffectId::GateSlideOpen, {640.0f, 400.0f}, 0.9f, 1.0f, 0.95f);
         }
+        pushSoundCaption("RESONANCE BULKhead GATE UNSEALED", {640.0f, 400.0f}, sf::Color(52, 211, 153));
 
         if (unlockedId >= 900) {
             m_acoustics.emitPulse(m_player.position(), 420.0f, 520.0f, 1.2f, 96, WaveSignature::ResonatorHum, 0.0f, 6.2831853f, false);
@@ -517,6 +599,7 @@ void Game::updatePlaying(float dt) {
                 }
                 if (m_audio) m_audio->playSpatial(SoundEffectId::ResonatorHum, enemy.position(), 1.0f, 0.95f, 1.25f);
                 m_acoustics.emitPulse(enemy.position(), 410.0f, 420.0f, 1.10f, 72, WaveSignature::ResonatorHum, 0.0f, 6.2831853f, false);
+                pushSoundCaption("ACOUSTIC HUNTER SHATTERED", enemy.position(), sf::Color(52, 211, 153));
                 continue;
             }
         }
@@ -531,10 +614,16 @@ void Game::updatePlaying(float dt) {
                     m_audio->playSpatial(SoundEffectId::EnemyAlert, enemy.position(), occ, 0.95f, 1.0f);
                 }
             }
+            pushSoundCaption(
+                enemy.state() == EnemyState::PursuePlayer ? "HUNTER PURSUIT ROAR!" : "HUNTER ALERTED BY SOUND",
+                enemy.position(),
+                enemy.state() == EnemyState::PursuePlayer ? sf::Color(244, 63, 94) : sf::Color(250, 204, 21)
+            );
             triggerCameraShake(cfg::feel::kShakeAmplitudeAlert, 0.30f);
         } else if (prevState != EnemyState::SearchLastKnown && enemy.state() == EnemyState::SearchLastKnown) {
             const float occ = AcousticSystem::computeTransmissionFactor(enemy.position(), m_player.position(), room.walls);
             if (m_audio) m_audio->playSpatial(SoundEffectId::EnemySearchClick, enemy.position(), occ, 0.85f, 1.0f);
+            pushSoundCaption("HUNTER ECHOLOCATION SEARCH CLICKS", enemy.position(), sf::Color(250, 204, 21));
         }
 
         // Stage 1.1: Play audible warning cue when enemy begins attack telegraph windup (0.3-0.6s)
@@ -543,6 +632,7 @@ void Game::updatePlaying(float dt) {
             if (m_audio) {
                 m_audio->playSpatial(SoundEffectId::EnemyAlert, enemy.position(), occ, 1.0f, 1.32f);
             }
+            pushSoundCaption("IMMINENT HUNTER LUNGE WINDUP!", enemy.position(), sf::Color(255, 56, 92), 1.8f);
         }
 
         if (enemy.consumeSwarmAmplification()) {

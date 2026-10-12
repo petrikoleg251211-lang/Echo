@@ -1,5 +1,6 @@
 #include "Game.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -535,7 +536,7 @@ int Game::runStage2SelfTest(const std::string& exeDir) {
         for (int i = 0; i < 10; ++i) {
             leech.update(0.1f, {305.0f, 300.0f}, noWalls, ac);
         }
-        const bool pulsedDrain = leech.consumeLeechDrainTick();
+        const bool pulsedDrain = leech.consumeLeechDrainPulse();
         leech.detachLeech({305.0f, 300.0f});
         check(
             attached && pulsedDrain && !leech.isLeechedOnPlayer(),
@@ -563,13 +564,13 @@ int Game::runStage2SelfTest(const std::string& exeDir) {
         const float hpStart = fork.health();
         fork.applyAcousticDamage(12.0f, false, {620.0f, 300.0f}, noWalls, false); // Direct unreflected -> 0 dmg
         const float hpAfterDirect = fork.health();
-        fork.applyAcousticDamage(12.0f, false, {620.0f, 300.0f}, noWalls, true);  // Reflected bounce -> 2.25x dmg
+        fork.applyAcousticDamage(12.0f, true, {620.0f, 300.0f}, noWalls, false);  // Reflected bounce -> 2.25x dmg
         const float hpAfterReflected = fork.health();
         for (int i = 0; i < 30; ++i) {
             fork.update(0.1f, {620.0f, 300.0f}, noWalls, ac);
         }
         check(
-             std::abs(hpStart - hpAfterDirect) < 0.001f &&
+            std::abs(hpStart - hpAfterDirect) < 0.001f &&
             (hpAfterDirect - hpAfterReflected) >= 24.0f &&
             fork.projectiles().size() >= 2,
             "Tuning Fork Construct blocks direct pings, takes 2.25x reflected bounce damage, and fires twin acoustic beams"
@@ -593,5 +594,345 @@ int Game::runStage2SelfTest(const std::string& exeDir) {
     return failures;
 }
 
+int Game::runStage3SelfTest(const std::string& exeDir) {
+    int failures = 0;
+    auto check = [&](bool cond, const char* msg) {
+        if (!cond) {
+            std::cerr << "  [STAGE 3 FAIL] " << msg << "\n";
+            ++failures;
+        }
+    };
+
+    // 1. Verify GLSL Post-Processing Shader Source & Uniforms (Bloom, Chromatic Aberration, Shockwave UV, CRT Scanline)
+    {
+        const char* glslSrc = PostProcessor::embeddedFragmentShaderSource();
+        const std::string shaderStr = (glslSrc != nullptr) ? glslSrc : "";
+        check(
+            shaderStr.find("u_bloomIntensity") != std::string::npos &&
+            shaderStr.find("u_chromaticAberration") != std::string::npos &&
+            shaderStr.find("u_shockwaveRadius") != std::string::npos &&
+            shaderStr.find("u_crtScanline") != std::string::npos,
+            "Embedded GLSL fragment shader contains Bloom, Chromatic Aberration, Shockwave UV, and CRT Scanline uniforms"
+        );
+
+        const PostFxUniforms uQuiet = PostProcessor::computeUniforms(true, false, 15.0f, 0.0f, 120, 0.0f, {640.0f, 400.0f});
+        const PostFxUniforms uScream = PostProcessor::computeUniforms(true, false, 95.0f, 0.045f, 420, 0.25f, {640.0f, 400.0f});
+        const PostFxUniforms uReduced = PostProcessor::computeUniforms(true, true, 95.0f, 0.045f, 420, 0.25f, {640.0f, 400.0f});
+        const PostFxUniforms uOff = PostProcessor::computeUniforms(false, false, 95.0f, 0.045f, 420, 0.25f, {640.0f, 400.0f});
+
+        check(
+            uScream.bloomIntensity > uQuiet.bloomIntensity &&
+            uScream.chromaticAberration > 0.008f &&
+            uQuiet.chromaticAberration < 0.0001f &&
+            uScream.shockwaveRadius > 0.04f &&
+            uScream.shockwaveStrength > 0.002f,
+            "PostProcessor::computeUniforms scales Bloom with active rays and triggers Chromatic Aberration & Shockwave in Scream/HitStop"
+        );
+        check(
+            uReduced.chromaticAberration < uScream.chromaticAberration * 0.5f &&
+            uOff.bloomIntensity == 0.0f &&
+            uOff.chromaticAberration == 0.0f &&
+            uOff.crtScanlineStrength == 0.0f,
+            "PostProcessor respects Photosensitivity Reduce-Flashes dampening and full PostFX disable toggle"
+        );
+    }
+
+    // 2. Verify 6-Stem Adaptive Audio Crossfade & Real-Time Low-Pass / Schroeder Reverb DSP
+    {
+        const AdaptiveStemWeights wExploreDrowned = AudioManager::computeAdaptiveStemWeights(
+            0.10f, false, false, false, 1, BiomeId::DrownedGalleries
+        );
+        const AdaptiveStemWeights wPursuitCrystal = AudioManager::computeAdaptiveStemWeights(
+            0.85f, true, false, false, 1, BiomeId::CrystalVaults
+        );
+        const AdaptiveStemWeights wSanctum = AudioManager::computeAdaptiveStemWeights(
+            0.0f, false, true, false, 1, BiomeId::CrystalVaults
+        );
+        const AdaptiveStemWeights wBossP3 = AudioManager::computeAdaptiveStemWeights(
+            0.95f, true, false, true, 3, BiomeId::LivingMycelium
+        );
+
+        check(
+            wExploreDrowned.subDrone > 0.70f &&
+            wExploreDrowned.lowPassCutoffHz < 3500.0f &&
+            wPursuitCrystal.lowPassCutoffHz > 12000.0f &&
+            wPursuitCrystal.reverbWetMix > wExploreDrowned.reverbWetMix &&
+            wPursuitCrystal.pursuitPercussion > 0.80f &&
+            wSanctum.sanctumPad > 0.80f &&
+            wBossP3.bossChoir > 0.90f,
+            "6-Stem Adaptive Audio weights & Biome DSP parameters (Drowned low-pass vs Crystal cathedral reverb) verified"
+        );
+
+        // Test One-Pole Low-Pass Filter & Schroeder Comb Reverb on synthetic 16-bit PCM buffer
+        std::vector<sf::Int16> pcm(4410, 0);
+        for (std::size_t i = 0; i < 400; ++i) {
+            pcm[i] = (i % 2 == 0) ? 18000 : -18000; // Nyquist high-frequency square burst in first 400 samples
+        }
+        AudioManager::applyLowPassFilter(pcm, 900.0f, 44100);
+        const bool lpfAttenuated = (std::abs(pcm[10]) < 12000);
+
+        AudioManager::applyReverbTail(pcm, 0.025f, 0.65f, 0.55f, 44100);
+        bool reverbTailPresent = false;
+        for (std::size_t i = 1100; i < 2500; ++i) {
+            if (std::abs(pcm[i]) > 120) {
+                reverbTailPresent = true;
+                break;
+            }
+        }
+        check(
+            lpfAttenuated && reverbTailPresent,
+            "Procedural DSP One-Pole Low-Pass Filter attenuates high frequencies and Schroeder Comb Reverb generates echo tail"
+        );
+    }
+
+    // 3. Verify 4 Colorblind Accessibility Modes (Normal, Deuteranopia, Protanopia, Tritanopia)
+    {
+        const sf::Color baseMoss = getMaterialProperties(SurfaceMaterial::DampMoss, ColorblindMode::Normal).baseColor;
+        const sf::Color deutMoss = getMaterialProperties(SurfaceMaterial::DampMoss, ColorblindMode::Deuteranopia).baseColor;
+        const sf::Color protMoss = getMaterialProperties(SurfaceMaterial::DampMoss, ColorblindMode::Protanopia).baseColor;
+        const sf::Color tritMoss = getMaterialProperties(SurfaceMaterial::DampMoss, ColorblindMode::Tritanopia).baseColor;
+
+        const sf::Color dangerRed(244, 63, 94);
+        const sf::Color deutDanger = applyColorblindTransform(dangerRed, ColorblindMode::Deuteranopia);
+
+        check(
+            (baseMoss != deutMoss || baseMoss != protMoss || baseMoss != tritMoss) &&
+            std::abs(static_cast<int>(deutMoss.b) - static_cast<int>(deutDanger.b)) >= 40,
+            "4 Colorblind palettes (Normal, Deuteranopia, Protanopia, Tritanopia) provide distinct high-contrast separation"
+        );
+    }
+
+    // 4. Verify Directional Closed Captions ([DIR] + Distance) & SaveSystem V6 Accessibility Persistence
+    {
+        const std::string capNorth = formatSoundCaptionLine({640.0f, 400.0f}, {640.0f, 200.0f}, "HUNTER ROAR");
+        const std::string capEast = formatSoundCaptionLine({640.0f, 400.0f}, {840.0f, 400.0f}, "STEAM HISS");
+        check(
+            capNorth.find("[N ") != std::string::npos &&
+            capNorth.find("20m]") != std::string::npos &&
+            capEast.find("[E ") != std::string::npos,
+            "Directional Sound Captions format 8-way compass bearing and distance in meters"
+        );
+
+        Game g(exeDir);
+        g.setSubtitlesEnabled(true);
+        g.setColorblindMode(ColorblindMode::Deuteranopia);
+        g.pushSoundCaption("TEST SONAR ECHO", {640.0f, 250.0f});
+        const bool queuedWhenEnabled = (g.activeSoundCaptions().size() == 1);
+        g.setSubtitlesEnabled(false);
+        g.pushSoundCaption("SUPPRESSED ECHO", {640.0f, 250.0f});
+        const bool ignoredWhenDisabled = (g.activeSoundCaptions().size() == 1);
+        check(queuedWhenEnabled && ignoredWhenDisabled, "Game::pushSoundCaption respects subtitlesEnabled accessibility toggle");
+
+        const std::string testSave = SaveSystem::resolveSaveFilePath(exeDir, "test_stage3_accessibility_v6.dat");
+        SaveData out{};
+        out.runSeed = 0xEC405300u;
+        out.checkpointRoomId = 5;
+        out.colorblindMode = static_cast<int>(ColorblindMode::Tritanopia);
+        out.subtitlesEnabled = false;
+        out.shakeIntensityScale = 0.35f;
+        out.reduceFlashes = true;
+        out.postFxEnabled = false;
+
+        const bool saved = SaveSystem::saveToFile(testSave, out);
+        SaveData loaded{};
+        const bool okLoad = SaveSystem::loadFromFile(testSave, loaded);
+        std::remove(testSave.c_str());
+
+        check(
+            saved && okLoad &&
+            loaded.colorblindMode == static_cast<int>(ColorblindMode::Tritanopia) &&
+            loaded.subtitlesEnabled == false &&
+            std::abs(loaded.shakeIntensityScale - 0.35f) < 0.02f &&
+            loaded.reduceFlashes == true &&
+            loaded.postFxEnabled == false,
+            "SaveSystem V6 persists and validates all Stage 3 Accessibility & PostFX settings with FNV-1a checksum"
+        );
+    }
+
+    return failures;
+}
+
+BenchmarkReportSummary Game::runBenchmark(
+    std::ostream& out,
+    int numFrames,
+    const std::string& exeDir
+) {
+    BenchmarkReportSummary summary{};
+    summary.totalFrames = std::max(10, numFrames);
+
+    AcousticSystem acoustics;
+    Labyrinth labyrinth(0xEC405400u);
+    Room& stressRoom = labyrinth.roomMut(16); // Room 16: The Conductor's Orchestra Hall (Crystalline Cavern)
+
+    // Add extra EchoCrystal walls to maximize ray-splitting stress during benchmark
+    stressRoom.walls.push_back({{420.0f, 220.0f, 120.0f, 18.0f}, SurfaceMaterial::EchoCrystal, false, 1.0f});
+    stressRoom.walls.push_back({{740.0f, 540.0f, 120.0f, 18.0f}, SurfaceMaterial::EchoCrystal, false, 1.0f});
+
+    std::vector<EnemyAI> enemies;
+    enemies.reserve(6);
+    {
+        EnemyAI conductor;
+        conductor.configurePatrol({{640.0f, 380.0f}, {700.0f, 380.0f}}, EnemyVariant::Conductor);
+        enemies.push_back(conductor);
+
+        EnemyAI banshee;
+        banshee.configurePatrol({{320.0f, 260.0f}, {480.0f, 260.0f}}, EnemyVariant::Banshee);
+        enemies.push_back(banshee);
+
+        EnemyAI construct;
+        construct.configurePatrol({{860.0f, 480.0f}, {960.0f, 320.0f}}, EnemyVariant::TuningForkConstruct);
+        enemies.push_back(construct);
+
+        EnemyAI leech;
+        leech.configurePatrol({{360.0f, 520.0f}, {520.0f, 520.0f}}, EnemyVariant::Leech);
+        enemies.push_back(leech);
+    }
+
+    std::vector<float> frameTimesMs;
+    frameTimesMs.reserve(static_cast<std::size_t>(summary.totalFrames));
+
+    const sf::Vector2f playerPos{640.0f, 400.0f};
+    const auto benchStart = std::chrono::steady_clock::now();
+
+    for (int f = 0; f < summary.totalFrames; ++f) {
+        const auto t0 = std::chrono::steady_clock::now();
+
+        if (f % 30 == 0) {
+            acoustics.emitRadialPulse(
+                playerPos,
+                120,
+                520.0f,
+                760.0f,
+                sf::Color(56, 189, 248),
+                true,
+                SonarFrequency::High
+            );
+        } else if (f % 12 == 0) {
+            const float angle = static_cast<float>(f) * 0.17f;
+            acoustics.emitDirectionalCone(
+                playerPos,
+                angle,
+                1.12f,
+                56,
+                540.0f,
+                780.0f,
+                sf::Color(192, 132, 252),
+                true,
+                SonarFrequency::Mid
+            );
+        }
+
+        const std::size_t raysBefore = acoustics.activeRayCount();
+        acoustics.update(cfg::kFixedTimeStep, stressRoom.walls);
+        const std::size_t raysAfter = acoustics.activeRayCount();
+        if (raysAfter > raysBefore) {
+            summary.crystalSplitsTriggered += static_cast<int>(raysAfter - raysBefore);
+        }
+        summary.peakActiveRays = std::max(summary.peakActiveRays, raysAfter);
+
+        for (auto& enemy : enemies) {
+            enemy.update(
+                cfg::kFixedTimeStep,
+                playerPos,
+                stressRoom.walls,
+                static_cast<float>(f) * cfg::kFixedTimeStep,
+                false,
+                65.0f
+            );
+        }
+
+        const auto t1 = std::chrono::steady_clock::now();
+        const float dtMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        frameTimesMs.push_back(dtMs);
+    }
+
+    const auto benchEnd = std::chrono::steady_clock::now();
+    summary.totalElapsedMs = std::chrono::duration<float, std::milli>(benchEnd - benchStart).count();
+
+    float sumMs = 0.0f;
+    for (float ms : frameTimesMs) {
+        sumMs += ms;
+    }
+    summary.avgFrameMs = sumMs / static_cast<float>(frameTimesMs.size());
+
+    std::sort(frameTimesMs.begin(), frameTimesMs.end());
+    const std::size_t p99Idx = std::min(
+        frameTimesMs.size() - 1,
+        static_cast<std::size_t>( static_cast<double>(frameTimesMs.size()) * 0.99 )
+    );
+    summary.p99FrameMs = frameTimesMs[p99Idx];
+    summary.estimatedFps = (summary.avgFrameMs > 0.0001f) ? (1000.0f / summary.avgFrameMs) : 9999.0f;
+
+    out << "\n========================================================================\n";
+    out << " ECHOLABYRINTH 5.4 — STAGE 4 ACOUSTIC & AI STRESS BENCHMARK (" << summary.totalFrames << " FRAMES)\n";
+    out << "========================================================================\n";
+    out << std::fixed << std::setprecision(3);
+    out << " Total Elapsed Wall Time : " << summary.totalElapsedMs << " ms\n";
+    out << " Average Frame Time      : " << summary.avgFrameMs << " ms (Target < 16.667 ms for 60 FPS)\n";
+    out << " 99th Percentile (P99)   : " << summary.p99FrameMs << " ms\n";
+    out << std::setprecision(1);
+    out << " Estimated Throughput    : " << summary.estimatedFps << " FPS\n";
+    out << " Peak Active Sonar Rays  : " << summary.peakActiveRays << " rays\n";
+    out << " EchoCrystal Ray Splits  : " << summary.crystalSplitsTriggered << " secondary rays\n";
+    out << "========================================================================\n";
+    (void)exeDir;
+    return summary;
+}
+
+int Game::runStage4SelfTest(const std::string& exeDir) {
+    int failures = 0;
+    auto check = [&](bool cond, const char* msg) {
+        if (!cond) {
+            std::cerr << "[Stage4SelfTest] FAIL: " << msg << "\n";
+            ++failures;
+        }
+    };
+
+    // 1. Verify Procedural 64x64 Window Icon Generation
+    {
+        const sf::Image icon = AssetManager::generateWindowIconImage();
+        check(
+            icon.getSize().x == 64 && icon.getSize().y == 64 && icon.getPixelsPtr() != nullptr,
+            "AssetManager::generateWindowIconImage generates a valid 64x64 RGBA buffer"
+        );
+        const sf::Color corner = icon.getPixel(0, 0);
+        const sf::Color center = icon.getPixel(31, 31);
+        const sf::Color ringSample = icon.getPixel(31 + 19, 31);
+        check(
+            corner.a == 0 && center.a == 255 && center.b >= 220 && ringSample.b > 80,
+            "Window icon features rounded transparent corners, bright diamond crystal core, and concentric sonar rings"
+        );
+    }
+
+    // 2. Verify Stage 4 Stress Benchmark (--benchmark) Performance & Ray Split Telemetry
+    {
+        std::ostringstream benchStream;
+        const BenchmarkReportSummary bench = runBenchmark(benchStream, 180, exeDir);
+        check(
+            bench.totalFrames == 180 &&
+            bench.avgFrameMs < 16.67f &&
+            bench.peakActiveRays >= 80 &&
+            bench.crystalSplitsTriggered > 0 &&
+            benchStream.str().find("ECHOLABYRINTH 5.4") != std::string::npos,
+            "Stage 4 --benchmark runs 180 high-load EchoCrystal + multi-enemy frames well under 16.67ms (60+ FPS)"
+        );
+    }
+
+    // 3. Verify Stage 4 Release Assets, Soundtrack Export Readiness & AssetManager Integrity
+    {
+        AssetManager assets;
+        assets.initialize(exeDir, false);
+        check(
+            assets.totalTriangleCount() >= 60 &&
+            SoundtrackComposer::trackCount() == 5 &&
+            PostProcessor::embeddedFragmentShaderSource() != nullptr,
+            "Stage 4 release bundle includes 7 3D meshes, 5 procedural OST tracks, and embedded GLSL shader"
+        );
+    }
+
+    return failures;
+}
+
 } // namespace echo
+
 

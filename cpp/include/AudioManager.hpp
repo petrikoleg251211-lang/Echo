@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace echo {
 
@@ -55,6 +56,17 @@ enum class SoundtrackLayerId : std::uint8_t {
 using MusicTrackId = SoundtrackLayerId;
 constexpr std::size_t kMusicTrackCount = static_cast<std::size_t>(SoundtrackLayerId::Count);
 
+struct AdaptiveStemWeights {
+    float subDrone{0.85f};          // Stem 1: Deep Subterranean Sub-Drone
+    float sonarArp{0.40f};          // Stem 2: Biome-tuned Harmonic Sonar Arpeggio
+    float tensionStrings{0.0f};     // Stem 3: Suspicion Tritone Strings & Chitin Clicks
+    float pursuitPercussion{0.0f};  // Stem 4: 120 BPM Industrial Pursuit Percussion
+    float sanctumPad{0.0f};         // Stem 5: Harmonic Sanctuary Pad & Harp
+    float bossChoir{0.0f};          // Stem 6: Abyssal Boss Organ & Choir
+    float lowPassCutoffHz{14000.0f}; // Biome & occlusion Low-Pass Filter cutoff frequency
+    float reverbWetMix{0.28f};      // Biome acoustic reverb wet mix [0..1]
+};
+
 class AudioManager {
 public:
     AudioManager();
@@ -101,7 +113,36 @@ public:
     void startAmbientDrone();
     void stopAmbientDrone();
 
-    // Updates 5-layer adaptive soundtrack (Exploration, Tension, Pursuit, Sanctum, Boss Choir) and heartbeat
+    // Stage 3: Computes target 6-stem adaptive weights & biome DSP parameters
+    static AdaptiveStemWeights computeAdaptiveStemWeights(
+        float dangerLevel0to1,
+        bool isPursuing,
+        bool isSanctumCheckpoint,
+        bool isBossChamber = false,
+        int bossPhase = 1,
+        BiomeId biome = BiomeId::DrownedGalleries
+    ) noexcept;
+
+    // Stage 3: Procedural DSP One-Pole Low-Pass Filter & Schroeder Comb Reverb
+    static void applyLowPassFilter(
+        std::vector<sf::Int16>& pcmSamples,
+        float cutoffHz,
+        unsigned int sampleRate = 44100
+    ) noexcept;
+
+    static void applyReverbTail(
+        std::vector<sf::Int16>& pcmSamples,
+        float delaySec,
+        float feedbackGain,
+        float wetMix,
+        unsigned int sampleRate = 44100
+    );
+
+    void setCurrentBiome(BiomeId biome) noexcept { m_currentBiome = biome; }
+    BiomeId currentBiome() const noexcept { return m_currentBiome; }
+    const AdaptiveStemWeights& activeStemWeights() const noexcept { return m_stemWeights; }
+
+    // Updates 6-stem adaptive soundtrack crossfades and physiological heartbeat/breathing
     void updateAdaptiveAudio(
         float dt,
         float dangerLevel0to1,
@@ -159,6 +200,8 @@ private:
     float m_sanctumBlend{0.0f};
     float m_bossBlend{0.0f};
     int m_currentBossPhase{1};
+    BiomeId m_currentBiome{BiomeId::DrownedGalleries};
+    AdaptiveStemWeights m_stemWeights{};
 
     float m_heartbeatTimer{0.0f};
     float m_breathTimer{0.0f};
